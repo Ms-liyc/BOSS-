@@ -1,9 +1,11 @@
 (() => {
   if (globalThis.Zping?.boot) return;
 
-  const EDU_LEVELS = ["初中", "中专", "中技", "高中", "大专", "本科", "硕士", "博士"];
+  const EDU_LEVELS = globalThis.ZpingCities?.EDU_LEVELS || ["初中", "中专", "中技", "高中", "大专", "本科", "硕士", "博士"];
   const SESSION_KEY = "session";
+  const SESSION_EXPIRED_KEY = "zping_session_expired";
   const EXPORT_KEY = "zping_export";
+  const SESSION_TTL_MS = 60 * 60 * 1000;
 
   let adapter = null;
   let session = null;
@@ -29,13 +31,28 @@
     if (match) return [Number(match[1]), Number(match[1]) + 50];
     match = raw.match(/(\d+(?:\.\d+)?)\s*千\s*[-~～]\s*(\d+(?:\.\d+)?)\s*万/);
     if (match) return [Math.round(Number(match[1])), Math.round(Number(match[2]) * 10)];
-    match = raw.match(/(\d+(?:\.\d+)?)\s*[-~～]\s*(\d+(?:\.\d+)?)\s*万元\s*\/\s*月/);
+    match = raw.match(/(\d+(?:\.\d+)?)\s*[-~～]\s*(\d+(?:\.\d+)?)\s*万(?:元)?(?:\s*\/\s*月)?/);
+    if (match) return [Math.round(Number(match[1]) * 10), Math.round(Number(match[2]) * 10)];
+    match = raw.match(/(\d+(?:\.\d+)?)\s*万\s*[-~～]\s*(\d+(?:\.\d+)?)\s*万/);
     if (match) return [Math.round(Number(match[1]) * 10), Math.round(Number(match[2]) * 10)];
     match = raw.match(/(\d+)\s*[-~～]\s*(\d+)\s*元\s*\/\s*月/);
     if (match) return [Math.round(Number(match[1]) / 1000), Math.round(Number(match[2]) / 1000)];
     match = raw.match(/(\d+)\s*[-~～]\s*(\d+)\s*元\s*\/\s*天/);
     if (match) return [Math.round(Number(match[1]) * 21.75 / 1000), Math.round(Number(match[2]) * 21.75 / 1000)];
+    match = raw.match(/(\d+)\s*元\s*\/\s*时/);
+    if (match) return [Math.round(Number(match[1]) * 160 / 1000), Math.round(Number(match[1]) * 160 / 1000)];
     return null;
+  }
+
+  function cityMatch(filterCity, jobCity, jobTitle) {
+    if (!filterCity || filterCity === "全国") return true;
+    const city = String(jobCity || "");
+    const title = String(jobTitle || "");
+    if (city.includes(filterCity) || filterCity.includes(city)) return true;
+    if (title.includes(filterCity)) return true;
+    const district = filterCity.replace(/市$/, "");
+    if (district && (city.includes(district) || title.includes(district))) return true;
+    return false;
   }
 
   function eduIndex(text) {
@@ -47,9 +64,15 @@
   function matchJob(job, filters) {
     const company = String(job.company || "");
     const city = String(job.city || "");
+    const title = String(job.title || "");
+    const keywords = splitWords(filters.keyword);
     const includes = splitWords(filters.companies);
     const excludes = splitWords(filters.exclude);
-    if (excludes.some((word) => company.includes(word))) return false;
+
+    if (keywords.length && !keywords.some((word) => title.includes(word) || company.includes(word))) {
+      return false;
+    }
+    if (excludes.some((word) => company.includes(word) || title.includes(word))) return false;
     if (includes.length && !includes.some((word) => company.includes(word))) return false;
 
     const required = eduIndex(filters.education);
@@ -63,10 +86,32 @@
       if (filters.salaryMax != null && low > filters.salaryMax) return false;
     }
 
-    if (filters.city && filters.city !== "全国" && (!city || !city.includes(filters.city))) {
-      return false;
-    }
+    if (!cityMatch(filters.city, city, title)) return false;
     return true;
+  }
+
+  async function filterEligibleJobs(jobs, filters) {
+    const out = [];
+    let historySkipped = 0;
+    for (const job of jobs) {
+      if (!matchJob(job, filters)) continue;
+      const block = await globalThis.ZpingHistory?.isBlocked(job, {
+        skipCompany: Boolean(filters.skipCompanyHistory),
+      });
+      if (block?.blocked) {
+        historySkipped += 1;
+        continue;
+      }
+      out.push(job);
+    }
+    return { jobs: out, historySkipped };
+  }
+
+  async function waitApplyDelay() {
+    const sec = Number(session?.filters?.applyDelay);
+    if (!sec || sec <= 0) return;
+    setStatus(`投递间隔：等待 ${sec} 秒…`);
+    await sleep(sec * 1000);
   }
 
   function absUrl(href) {
@@ -80,8 +125,9 @@
   async function loadSession() {
     const data = await chrome.storage.local.get(SESSION_KEY);
     const saved = data[SESSION_KEY] || null;
-    if (saved?.updatedAt && Date.now() - saved.updatedAt > 30 * 60 * 1000) {
+    if (saved?.updatedAt && Date.now() - saved.updatedAt > SESSION_TTL_MS) {
       await chrome.storage.local.remove(SESSION_KEY);
+      await chrome.storage.local.set({ [SESSION_EXPIRED_KEY]: true });
       return null;
     }
     return saved;
@@ -151,6 +197,8 @@
         .export-wrap { display: none; margin-top: 8px; }
         .export-wrap.show { display: block; }
         .status { min-height: 18px; margin: 8px 0 0; font-size: 12px; color: #0f766e; }
+        .hint { margin-top: 8px; font-size: 11px; color: #9aa5b1; }
+        .row.hide { display: none; }
       </style>
       <div class="card">
         <h2>投递前确认</h2>
@@ -160,6 +208,8 @@
         <div class="row"><span>工作地点</span><strong id="city"></strong></div>
         <div class="row"><span>薪资范围</span><strong id="salary"></strong></div>
         <div class="row"><span>学历要求</span><strong id="education"></strong></div>
+        <div class="row hide" id="tags-row"><span>职位标签</span><strong id="tags"></strong></div>
+        <div class="hint">快捷键：Y 确认 · N 跳过 · S 停止</div>
         <div class="actions">
           <button class="yes" id="yes" type="button">确认投递</button>
           <button class="no" id="no" type="button">跳过</button>
@@ -195,6 +245,28 @@
     const style = document.createElement("style");
     style.textContent = ".zping-highlight{outline:2px solid #0f766e !important;outline-offset:2px;}";
     document.documentElement.appendChild(style);
+    bindPanelKeys();
+  }
+
+  function bindPanelKeys() {
+    if (globalThis.__ZPING_KEYS__) return;
+    globalThis.__ZPING_KEYS__ = true;
+    document.addEventListener("keydown", (event) => {
+      if (!session?.running || applying) return;
+      if (!document.getElementById("zping-host")) return;
+      const tag = String(event.target?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || event.target?.isContentEditable) return;
+      if (event.key === "y" || event.key === "Y") {
+        event.preventDefault();
+        onYes();
+      } else if (event.key === "n" || event.key === "N") {
+        event.preventDefault();
+        onNo();
+      } else if (event.key === "s" || event.key === "S") {
+        event.preventDefault();
+        stop();
+      }
+    }, true);
   }
 
   function setStatus(text) {
@@ -213,11 +285,28 @@
     return `${min ?? 0}k - ${max ?? "∞"}k`;
   }
 
-  function addRecord(job, result) {
+  async function addRecord(job, result) {
     if (!session) return;
+    applying = true;
+    setButtons("busy");
     if (!session.records) session.records = [];
     const f = session.filters || {};
-    session.records.push({
+    const historyOpts = { skipCompany: Boolean(f.skipCompanyHistory) };
+    let detail = job?.detail || "";
+    let tags = job?.tags || "";
+    try {
+      if (adapter?.fetchJobDetail && (!detail || !tags)) {
+        setStatus("正在抓取职位详情…");
+        try {
+          const fetched = await adapter.fetchJobDetail(job);
+          if (!detail) detail = fetched || "";
+          tags = job?.tags || tags || "";
+        } catch {
+          detail = detail || "";
+        }
+      }
+      await globalThis.ZpingHistory?.remember(job, result, platformLabel(session.platform), historyOpts);
+      session.records.push({
       time: new Date().toLocaleString("zh-CN"),
       result,
       platform: platformLabel(session.platform),
@@ -232,8 +321,26 @@
       city: job?.city || "",
       salary: job?.salary || "",
       education: job?.education || "",
+      tags,
       url: job?.url || "",
-    });
+        detail,
+      });
+      const record = session.records[session.records.length - 1];
+      const platform = session.platform === "yupao" ? "yupao" : "boss";
+      const merged = await globalThis.ZpingExport.appendToLedger(platform, [record]);
+      try {
+        const count = await globalThis.ZpingExport.downloadLedger(platform, merged);
+        const name = globalThis.ZpingExport.exportFilename(platform);
+        setStatus(`已更新 ${name}（累计 ${count} 条）`);
+      } catch (error) {
+        setStatus(error?.message || "Excel 更新失败");
+      }
+    } finally {
+      applying = false;
+      if (session?.running) {
+        setButtons(session.phase === "chat-shown" ? "next" : "confirm");
+      }
+    }
   }
 
   async function saveExportSnapshot() {
@@ -250,14 +357,15 @@
   }
 
   async function exportExcel() {
-    const stored = await chrome.storage.local.get(EXPORT_KEY);
-    const data = stored[EXPORT_KEY];
-    if (!data?.records?.length) {
+    const platform = session?.platform || adapter?.id || "boss";
+    const records = await globalThis.ZpingExport.loadLedger(platform);
+    if (!records.length) {
       setStatus("没有可导出的记录。请先完成一轮投递。");
       return;
     }
-    const count = globalThis.ZpingExport.downloadZpingXlsx(data);
-    setStatus(`已导出 ${count} 条记录为 .xlsx 文件。`);
+    const count = await globalThis.ZpingExport.downloadLedger(platform, records);
+    const name = globalThis.ZpingExport.exportFilename(platform);
+    setStatus(`已更新 ${name}，累计 ${count} 条。`);
   }
 
   function showExportButton(show) {
@@ -267,9 +375,20 @@
 
   async function endRun(message) {
     const exportData = await saveExportSnapshot();
+    const platform = exportData.platform === "yupao" ? "yupao" : "boss";
+    if (exportData.records.length) {
+      try {
+        await globalThis.ZpingExport.downloadLedger(platform);
+      } catch {
+        /* 导出失败不阻断结束流程 */
+      }
+    }
+    const total = (await globalThis.ZpingExport.loadLedger(platform)).length;
     await saveSession(null);
-    showExportButton(exportData.records.length > 0);
-    setStatus(message || `本轮结束。已投 ${exportData.applied}，跳过 ${exportData.skipped}。可点「导出 Excel」。`);
+    showExportButton(total > 0);
+    const fileName = globalThis.ZpingExport.exportFilename(platform);
+    const tail = total ? `，已更新 ${fileName}（累计 ${total} 条）` : "";
+    setStatus(message || `本轮结束。已投 ${exportData.applied}，跳过 ${exportData.skipped}${tail}。`);
   }
 
   function setButtons(mode) {
@@ -301,23 +420,60 @@
     return job?.key || job?.url || `${job?.title}|${job?.company}|${job?.salary}|${job?.city}`;
   }
 
+  function jobUrlId(job) {
+    const boss = job?.url?.match(/job_detail\/([^./?#]+)/i)?.[1];
+    if (boss) return `boss:${boss}`;
+    const yupao = job?.url?.match(/\/zhaogong\/(\d+)\.html/i)?.[1];
+    if (yupao) return `yupao:${yupao}`;
+    return "";
+  }
+
   async function attachCards(jobs) {
     const live = await adapter.collectJobs();
-    const byKey = new Map(live.map((job) => [jobKey(job), job.card]));
+    const byId = new Map();
+    const byKey = new Map();
+    const byUrl = new Map();
+    const titleCounts = new Map();
+    live.forEach((job) => {
+      const id = jobUrlId(job);
+      if (id) byId.set(id, job.card);
+      byKey.set(jobKey(job), job.card);
+      if (job.url) byUrl.set(job.url.split("?")[0], job.card);
+      if (job.title) titleCounts.set(job.title, (titleCounts.get(job.title) || 0) + 1);
+    });
+    const byTitle = new Map();
+    live.forEach((job) => {
+      if (job.title && titleCounts.get(job.title) === 1) byTitle.set(job.title, job.card);
+    });
     jobs.forEach((job) => {
-      job.card = byKey.get(jobKey(job)) || null;
+      const id = jobUrlId(job);
+      job.card = (id && byId.get(id))
+        || byKey.get(jobKey(job))
+        || (job.url ? byUrl.get(job.url.split("?")[0]) : null)
+        || (job.title ? byTitle.get(job.title) : null)
+        || null;
+      adapter.syncJobFromCard?.(job);
     });
   }
 
-  function renderJob() {
+  async function prepareCurrentJob() {
+    if (!session?.jobs?.length) return;
+    const job = session.jobs[session.index];
+    if (!job) return;
+    await attachCards([job]);
+  }
+
+  async function renderJob() {
     ensurePanel();
+    await prepareCurrentJob();
     const job = session.jobs[session.index];
     const meta = shadow.getElementById("meta");
     if (!job) {
       meta.textContent = "没有更多职位";
-      ["company", "title", "city", "salary", "education"].forEach((id) => {
+      ["company", "title", "city", "salary", "education", "tags"].forEach((id) => {
         shadow.getElementById(id).textContent = "-";
       });
+      shadow.getElementById("tags-row")?.classList.add("hide");
       return;
     }
     meta.textContent = `${adapter.label} · 第 ${session.index + 1}/${session.jobs.length} 个 · 已投 ${session.applied} · 跳过 ${session.skipped}`;
@@ -326,8 +482,17 @@
     shadow.getElementById("city").textContent = job.city || "未识别";
     shadow.getElementById("salary").textContent = job.salary || "未识别";
     shadow.getElementById("education").textContent = job.education || "不限";
+    const tagsRow = shadow.getElementById("tags-row");
+    const tagsEl = shadow.getElementById("tags");
+    if (job.tags) {
+      tagsRow?.classList.remove("hide");
+      tagsEl.textContent = job.tags;
+    } else {
+      tagsRow?.classList.add("hide");
+      tagsEl.textContent = "";
+    }
     setButtons("confirm");
-    setStatus("第 1 步：核对这 5 项。确认后再点投递。");
+    setStatus(job.card ? "核对信息与左侧高亮卡片一致后，点「确认投递」或按 Y。" : "未绑定到列表卡片，建议刷新页面后重新开始。");
     highlight(job);
   }
 
@@ -354,12 +519,13 @@
       return { ok: false, message: cityHint };
     }
     const raw = await waitForJobs();
-    const jobs = raw.filter((job) => matchJob(job, filters));
+    const { jobs, historySkipped } = await filterEligibleJobs(raw, filters);
     if (!jobs.length) {
       ensurePanel();
-      const rule = `城市 ${filters.city || "不限"}，学历 ${filters.education || "不限"}，薪资 ${filters.salaryMin ?? "不限"}-${filters.salaryMax ?? "不限"}k`;
+      const rule = `岗位 ${filters.keyword || "不限"}，城市 ${filters.city || "不限"}，学历 ${filters.education || "不限"}，薪资 ${filters.salaryMin ?? "不限"}-${filters.salaryMax ?? "不限"}k`;
       const hint = adapter.scanHint?.() || "";
-      setStatus(raw.length ? `本页 ${raw.length} 个职位都不符合当前筛选（${rule}）。` : `没有识别到职位。${hint}`);
+      const historyHint = historySkipped ? `，历史去重跳过 ${historySkipped} 个` : "";
+      setStatus(raw.length ? `本页 ${raw.length} 个职位都不符合当前筛选（${rule}${historyHint}）。` : `没有识别到职位。${hint}`);
       renderEmpty(raw.length);
       return { ok: false, message: raw.length ? "没有符合条件的职位。" : "没有识别到职位列表。" };
     }
@@ -379,8 +545,9 @@
       filters,
     });
     showExportButton(false);
-    renderJob();
-    return { ok: true, message: `找到 ${jobs.length} 个职位，请在页面右下角确认。` };
+    await renderJob();
+    const historyMsg = historySkipped ? `，已跳过历史记录 ${historySkipped} 个` : "";
+    return { ok: true, message: `找到 ${jobs.length} 个职位${historyMsg}，请在页面右下角确认。` };
   }
 
   function renderEmpty(found) {
@@ -423,13 +590,20 @@
     applying = true;
     setButtons("busy");
     try {
-      await attachCards(session.jobs);
+      await prepareCurrentJob();
       const job = session.jobs[session.index];
       if (typeof adapter.applyHere === "function") {
         session.phase = "opening-chat";
         await saveSession(session);
-        setStatus(`第 2 步：正在点击「${actionName()}」。`);
+        setStatus(`第 2 步：正在打开「${job.company || "当前公司"}」并点击「${actionName()}」。`);
         const result = await adapter.applyHere(job);
+        if (result === "mismatch") {
+          session.phase = "confirm";
+          await saveSession(session);
+          setButtons("confirm");
+          setStatus("右侧详情与确认框不一致，已停止投递。请核对左侧高亮卡片，或点跳过。");
+          return;
+        }
         if (result === "need-nav" && job?.url) {
           session.phase = "apply";
           await saveSession(session);
@@ -437,16 +611,17 @@
           return;
         }
         if (result === "opened-chat" || result === "ok") {
-          addRecord(job, "已投递");
+          await addRecord(job, "已投递");
           session.applied += 1;
           session.phase = "chat-shown";
           await saveSession(session);
+          await waitApplyDelay();
           setButtons("next");
           setStatus(`第 3 步：已发起沟通（${job?.title || "当前职位"}）。看完点「下一条」。`);
           return;
         }
         if (result === "already") {
-          addRecord(job, "已沟通过");
+          await addRecord(job, "已沟通过");
           session.skipped += 1;
           session.index += 1;
           session.phase = "confirm";
@@ -465,7 +640,7 @@
         return;
       }
     if (!job?.url) {
-      addRecord(job, "已跳过");
+      await addRecord(job, "已跳过");
       session.skipped += 1;
       session.index += 1;
       await saveSession(session);
@@ -492,7 +667,7 @@
         return;
       }
       const skippedJob = session.jobs[session.index];
-      addRecord(skippedJob, "已跳过");
+      await addRecord(skippedJob, "已跳过");
       session.skipped += 1;
       session.index += 1;
       session.phase = "confirm";
@@ -526,7 +701,7 @@
     if (session.index < session.jobs.length) {
       session.phase = "confirm";
       await saveSession(session);
-      renderJob();
+      await renderJob();
       return;
     }
     if (session.page >= session.maxPages || !adapter.clickNextPage) {
@@ -537,6 +712,7 @@
     session.page += 1;
     await saveSession(session);
     setStatus("正在翻到下一页…");
+    adapter.reset?.();
     const before = location.href;
     const clicked = adapter.clickNextPage();
     if (!clicked) {
@@ -544,17 +720,17 @@
       return;
     }
     const start = Date.now();
-    while (Date.now() - start < 8000) {
+    while (Date.now() - start < 15000) {
       await sleep(500);
       if (location.href !== before) return;
       const fresh = (await adapter.collectJobs()).filter((job) => !session.jobs.some((item) => jobKey(item) === jobKey(job)));
-      const matched = fresh.filter((job) => matchJob(job, session.filters));
+      const { jobs: matched } = await filterEligibleJobs(fresh, session.filters);
       if (matched.length) {
         session.jobs.push(...matched);
         session.listUrl = location.href;
         session.phase = "confirm";
         await saveSession(session);
-        renderJob();
+        await renderJob();
         return;
       }
     }
@@ -597,7 +773,7 @@
       await sleep(400);
     }
     if (!button) {
-      addRecord(job, "投递失败");
+      await addRecord(job, "投递失败");
       session.skipped += 1;
       session.index += 1;
       session.phase = "confirm";
@@ -609,7 +785,7 @@
     }
     const label = button.innerText.trim();
     if (/继续沟通/.test(label)) {
-      addRecord(job, "已沟通过");
+      await addRecord(job, "已沟通过");
       session.skipped += 1;
       setStatus("这个职位已经沟通过，跳过。");
     } else {
@@ -617,8 +793,9 @@
       await sleep(1000);
       const confirm = findButton(/^确定$|^发送$|确认投递/);
       if (confirm) confirm.click();
-      addRecord(job, "已投递");
+      await addRecord(job, "已投递");
       session.applied += 1;
+      await waitApplyDelay();
       setStatus("已发起沟通，返回列表。");
     }
     session.index += 1;
@@ -632,10 +809,13 @@
     await waitForJobs();
     await attachCards(session.jobs);
     if (session.phase === "paging") {
+      adapter.reset?.();
       const start = Date.now();
       let matched = [];
-      while (Date.now() - start < 10000) {
-        matched = (await adapter.collectJobs()).filter((job) => !session.jobs.some((item) => jobKey(item) === jobKey(job)) && matchJob(job, session.filters));
+      while (Date.now() - start < 15000) {
+        const fresh = (await adapter.collectJobs()).filter((job) => !session.jobs.some((item) => jobKey(item) === jobKey(job)));
+        const filtered = await filterEligibleJobs(fresh, session.filters);
+        matched = filtered.jobs;
         if (matched.length) break;
         await sleep(400);
       }
@@ -648,7 +828,7 @@
       await advance();
       return;
     }
-    renderJob();
+    await renderJob();
   }
 
   async function maybeAutostart() {
@@ -714,9 +894,11 @@
         return;
       }
       if (session.phase === "opening-chat") {
+        if (job) await addRecord(job, "已投递");
         session.applied = (session.applied || 0) + 1;
         session.phase = "chat-shown";
         await saveSession(session);
+        await waitApplyDelay();
       }
       if (job) {
         shadow.getElementById("meta").textContent = "对话已打开";
@@ -742,6 +924,12 @@
         await resumeOnList();
         return;
       }
+    }
+    const expiredData = await chrome.storage.local.get(SESSION_EXPIRED_KEY);
+    if (expiredData[SESSION_EXPIRED_KEY]) {
+      await chrome.storage.local.remove(SESSION_EXPIRED_KEY);
+      ensurePanel();
+      setStatus("上一轮会话已过期（超过 1 小时）。请重新点扩展里的「在当前页开始」。");
     }
     await maybeAutostart();
   }

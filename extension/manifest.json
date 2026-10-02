@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zping 简历投递助手",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "在 Boss直聘、鱼泡网按条件筛选职位，每次投递前确认公司、岗位、地点、薪资和学历。",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
@@ -20,19 +20,19 @@
       "js": ["content/inject.js"],
       "world": "MAIN",
       "run_at": "document_start",
-      "all_frames": true
+      "all_frames": false
     },
     {
       "matches": ["https://www.zhipin.com/*", "https://*.zhipin.com/*"],
-      "js": ["lib/cities.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js", "content/boss.js"],
+      "js": ["lib/cities.js", "lib/history.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js", "content/boss.js"],
       "run_at": "document_idle",
-      "all_frames": true
+      "all_frames": false
     },
     {
       "matches": ["https://www.yupao.com/*", "https://*.yupao.com/*"],
-      "js": ["lib/cities.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js", "content/yupao.js"],
+      "js": ["lib/cities.js", "lib/history.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js", "content/yupao.js"],
       "run_at": "document_idle",
-      "all_frames": true
+      "all_frames": false
     }
   ]
 }

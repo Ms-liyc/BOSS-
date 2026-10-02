@@ -1,15 +1,27 @@
-/* global XLSX */
+/* global XLSX, chrome */
 (function (global) {
   const HEADERS = [
-    "招牌公司名称", "学历", "工作岗位", "工作地点", "薪资范围",
-    "公司名称", "工资", "是否投递简历", "招聘详细信息",
+    "筛选条件", "公司名称", "工作岗位", "工作地点", "学历要求", "工资",
+    "职位标签", "是否投递", "处理时间", "职位链接", "JD详情",
   ];
+
+  const LEDGER_KEYS = {
+    boss: "zping_xlsx_boss",
+    yupao: "zping_xlsx_yupao",
+  };
+
+  const FILENAMES = {
+    boss: "BOSS直聘列表.xlsx",
+    yupao: "鱼泡网列表.xlsx",
+  };
 
   const COLOR = {
     greenFont: "FF15803D",
     greenFill: "FFE8F5E9",
     redFont: "FFDC2626",
     redFill: "FFFFECEC",
+    orangeFont: "FFC2410C",
+    orangeFill: "FFFFF7ED",
   };
 
   function formatAppliedStatus(result) {
@@ -27,18 +39,46 @@
       .toLowerCase();
   }
 
+  function platformKey(platform) {
+    const value = String(platform || "").toLowerCase();
+    if (value === "yupao" || value.includes("鱼泡")) return "yupao";
+    return "boss";
+  }
+
+  function exportFilename(platform) {
+    return FILENAMES[platformKey(platform)] || FILENAMES.boss;
+  }
+
+  function recordKey(row) {
+    const url = String(row?.url || "").split("?")[0].trim();
+    if (url) return url;
+    return `${row?.title || ""}|${row?.company || ""}|${row?.time || ""}`;
+  }
+
+  function mergeRecords(existing, incoming) {
+    const map = new Map();
+    (existing || []).forEach((row) => map.set(recordKey(row), row));
+    (incoming || []).forEach((row) => map.set(recordKey(row), row));
+    return Array.from(map.values());
+  }
+
   function textCell(value) {
     return { v: String(value ?? ""), t: "s" };
   }
 
   function styledCell(value, kind) {
-    const isGreen = kind === "green";
+    const palette = {
+      green: [COLOR.greenFont, COLOR.greenFill],
+      red: [COLOR.redFont, COLOR.redFill],
+      orange: [COLOR.orangeFont, COLOR.orangeFill],
+    };
+    const [font, fill] = palette[kind] || palette.red;
     return {
       v: String(value ?? ""),
       t: "s",
       s: {
-        font: { bold: true, color: { rgb: isGreen ? COLOR.greenFont : COLOR.redFont } },
-        fill: { patternType: "solid", fgColor: { rgb: isGreen ? COLOR.greenFill : COLOR.redFill } },
+        font: { bold: true, color: { rgb: font } },
+        fill: { patternType: "solid", fgColor: { rgb: fill } },
       },
     };
   }
@@ -56,66 +96,141 @@
   function buildAppliedCell(result) {
     const text = formatAppliedStatus(result);
     if (text === "是") return styledCell(text, "green");
+    if (text === "已沟通过") return styledCell(text, "orange");
     if (text === "否") return styledCell(text, "red");
     return styledCell(text, "red");
   }
 
+  function parseRecordTime(text) {
+    const value = Date.parse(String(text || "").replace(/-/g, "/"));
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function sortRecordsByTime(records) {
+    return [...(records || [])].sort((a, b) => parseRecordTime(a.time) - parseRecordTime(b.time));
+  }
+
+  function buildFilterSummary(row) {
+    const parts = [];
+    if (row.filterCity) parts.push(row.filterCity);
+    if (row.filterKeyword) parts.push(row.filterKeyword);
+    if (row.filterEducation && row.filterEducation !== "不限") parts.push(row.filterEducation);
+    if (row.filterSalary && row.filterSalary !== "不限") parts.push(row.filterSalary);
+    if (row.filterCompanies) parts.push(`公司:${row.filterCompanies}`);
+    if (row.filterExclude) parts.push(`排除:${row.filterExclude}`);
+    return parts.join(" · ") || "不限";
+  }
+
   function buildJobDetailText(row) {
-    const lines = [
-      `平台：${row.platform || ""}`,
-      `工作岗位：${row.title || ""}`,
-      `工作地点：${row.city || ""}`,
-      `学历要求：${row.education || ""}`,
-      `处理时间：${row.time || ""}`,
-      `职位链接：${row.url || ""}`,
-    ];
-    return lines.join("\n");
+    return row.detail ? String(row.detail) : "";
   }
 
   function buildExportRows(data) {
     const seenCompanies = new Set();
     const rows = (data?.records || []).map((row) => [
-      row.filterCompanies || "不限",
-      row.filterEducation || "不限",
-      row.filterKeyword || "",
-      row.filterCity || "",
-      row.filterSalary || "不限",
+      buildFilterSummary(row),
       buildCompanyCell(row.company, seenCompanies),
+      row.title || "",
+      row.city || "",
+      row.education || "不限",
       row.salary || "",
+      row.tags || "",
       buildAppliedCell(row.result),
+      row.time || "",
+      row.url || "",
       buildJobDetailText(row),
     ]);
     return [HEADERS.map((h) => textCell(h)), ...rows];
   }
 
-  function exportFilename() {
-    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    return `zping投递记录-${stamp}.xlsx`;
+  async function clearLedger(platform) {
+    const key = platformKey(platform);
+    await chrome.storage.local.remove(LEDGER_KEYS[key]);
   }
 
-  function downloadZpingXlsx(data) {
+  function writeWorkbook(records, platform) {
     if (!global.XLSX) throw new Error("Excel 导出库未加载，请重新加载扩展。");
-    if (!data?.records?.length) throw new Error("没有可导出的记录。请先完成一轮投递。");
+    if (!records?.length) throw new Error("没有可导出的记录。请先完成一轮投递。");
 
-    const rows = buildExportRows(data);
+    const rows = buildExportRows({ records: sortRecordsByTime(records) });
     const sheet = XLSX.utils.aoa_to_sheet(rows);
     sheet["!cols"] = [
-      { wch: 22 },
-      { wch: 10 },
-      { wch: 18 },
-      { wch: 12 },
-      { wch: 14 },
+      { wch: 36 },
       { wch: 28 },
-      { wch: 16 },
+      { wch: 20 },
       { wch: 14 },
+      { wch: 10 },
+      { wch: 14 },
+      { wch: 24 },
+      { wch: 12 },
+      { wch: 18 },
+      { wch: 42 },
       { wch: 64 },
     ];
 
     const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, sheet, "投递记录");
-    XLSX.writeFile(book, exportFilename());
-    return data.records.length;
+    const sheetName = platformKey(platform) === "yupao" ? "鱼泡网列表" : "BOSS直聘列表";
+    XLSX.utils.book_append_sheet(book, sheet, sheetName);
+    XLSX.writeFile(book, exportFilename(platform));
+    return records.length;
   }
 
-  global.ZpingExport = { downloadZpingXlsx, buildExportRows, buildJobDetailText };
+  async function loadLedger(platform) {
+    const key = platformKey(platform);
+    const storageKey = LEDGER_KEYS[key];
+    const data = await chrome.storage.local.get(storageKey);
+    return data[storageKey]?.records || [];
+  }
+
+  async function saveLedger(platform, records) {
+    const key = platformKey(platform);
+    await chrome.storage.local.set({
+      [LEDGER_KEYS[key]]: {
+        records,
+        updatedAt: Date.now(),
+      },
+    });
+    return records;
+  }
+
+  async function appendToLedger(platform, records) {
+    if (!records?.length) return await loadLedger(platform);
+    const merged = mergeRecords(await loadLedger(platform), records);
+    await saveLedger(platform, merged);
+    return merged;
+  }
+
+  async function downloadLedger(platform, records) {
+    const list = records || await loadLedger(platform);
+    return writeWorkbook(list, platform);
+  }
+
+  async function appendAndDownload(platform, records) {
+    const merged = await appendToLedger(platform, records);
+    return writeWorkbook(merged, platform);
+  }
+
+  /** @deprecated 兼容旧调用，优先写入对应平台累计表再导出 */
+  async function downloadZpingXlsx(data) {
+    const platform = data?.platform || data?.records?.[0]?.platform || "boss";
+    const records = data?.records || [];
+    if (!records.length) throw new Error("没有可导出的记录。请先完成一轮投递。");
+    return appendAndDownload(platform, records);
+  }
+
+  global.ZpingExport = {
+    downloadZpingXlsx,
+    downloadLedger,
+    appendToLedger,
+    appendAndDownload,
+    clearLedger,
+    loadLedger,
+    mergeRecords,
+    sortRecordsByTime,
+    buildExportRows,
+    buildFilterSummary,
+    buildJobDetailText,
+    exportFilename,
+    platformKey,
+  };
 })(typeof globalThis !== "undefined" ? globalThis : window);

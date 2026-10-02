@@ -1,31 +1,5 @@
-const CITIES = [
-  "全国", "北京", "上海", "广州", "深圳", "杭州", "成都", "南京", "武汉",
-  "西安", "苏州", "天津", "重庆", "长沙", "郑州", "青岛", "厦门", "合肥",
-  "东莞", "佛山",
-];
-
-const BOSS_CITY = {
-  全国: "100010000",
-  北京: "101010100",
-  上海: "101020100",
-  广州: "101280100",
-  深圳: "101280600",
-  杭州: "101210100",
-  成都: "101270100",
-  南京: "101190100",
-  武汉: "101200100",
-  西安: "101110100",
-  苏州: "101190400",
-  天津: "101030100",
-  重庆: "101040100",
-  长沙: "101250100",
-  郑州: "101180100",
-  青岛: "101120200",
-  厦门: "101230200",
-  合肥: "101220100",
-  东莞: "101281600",
-  佛山: "101280800",
-};
+const PRESET_KEY = "zping_presets";
+const CITIES = ZpingCities.CITIES;
 
 const DEFAULTS = {
   platform: "boss",
@@ -38,10 +12,14 @@ const DEFAULTS = {
   exclude: "",
   maxApply: 20,
   maxPages: 5,
+  applyDelay: 3,
+  skipCompanyHistory: false,
 };
 
 const form = document.getElementById("form");
 const message = document.getElementById("message");
+const statusBar = document.getElementById("status-bar");
+let saveTimer = null;
 
 function fillCities() {
   const select = form.city;
@@ -66,6 +44,8 @@ function readFilters() {
     exclude: String(data.get("exclude") || "").trim(),
     maxApply: Math.max(1, Number(data.get("maxApply")) || 20),
     maxPages: Math.max(1, Number(data.get("maxPages")) || 5),
+    applyDelay: Math.max(0, Number(data.get("applyDelay")) || 0),
+    skipCompanyHistory: Boolean(form.elements.skipCompanyHistory?.checked),
   };
 }
 
@@ -77,7 +57,10 @@ function numberOrNull(value) {
 
 function writeFilters(filters) {
   Object.entries(filters).forEach(([key, value]) => {
-    if (form.elements[key]) form.elements[key].value = value ?? "";
+    const field = form.elements[key];
+    if (!field) return;
+    if (field.type === "checkbox") field.checked = Boolean(value);
+    else field.value = value ?? "";
   });
 }
 
@@ -86,43 +69,112 @@ function setMessage(text, isError) {
   message.className = isError ? "error" : "";
 }
 
+function setStatusBar(text, kind) {
+  statusBar.textContent = text;
+  statusBar.className = `status-bar${kind ? ` ${kind}` : ""}`;
+}
+
 function searchUrl(filters) {
-  const keyword = encodeURIComponent(filters.keyword || "");
   if (filters.platform === "yupao") {
     return ZpingCities.yupaoSearchUrl(filters.city, filters.keyword);
   }
-  const city = BOSS_CITY[filters.city] || BOSS_CITY["北京"];
-  return `https://www.zhipin.com/web/geek/job?query=${keyword}&city=${city}`;
+  return ZpingCities.bossSearchUrl(filters.city, filters.keyword);
 }
 
 function onListPage(url, platform) {
-  if (platform === "yupao") return /yupao\.com/i.test(url) && !/\/zhaogong\/\d+\.html/i.test(url);
-  return /zhipin\.com/i.test(url) && url.includes("/web/geek/job");
+  if (platform === "yupao") {
+    return /yupao\.com\/zhaogong\//i.test(url) && !/\/zhaogong\/\d+\.html/i.test(url);
+  }
+  return /zhipin\.com/i.test(url) && /\/web\/geek\/job/i.test(url);
 }
 
 function scriptFiles(platform) {
+  const shared = ["lib/cities.js", "lib/history.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js"];
   return platform === "yupao"
-    ? ["content/common.js", "content/yupao.js"]
-    : ["content/common.js", "content/boss.js"];
+    ? [...shared, "content/yupao.js"]
+    : [...shared, "content/boss.js"];
+}
+
+async function injectBoss(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: ["content/inject.js"],
+    world: "MAIN",
+  });
 }
 
 async function sendToTab(tab, filters, type) {
-  const message = { type, filters };
+  const payload = { type, filters };
   try {
-    return await chrome.tabs.sendMessage(tab.id, message);
-  } catch {
+    return await chrome.tabs.sendMessage(tab.id, payload);
+  } catch (error) {
+    if (filters.platform === "boss") {
+      try {
+        await injectBoss(tab.id);
+      } catch {
+        /* inject 可能已存在 */
+      }
+    }
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       files: scriptFiles(filters.platform),
     });
-    return chrome.tabs.sendMessage(tab.id, message);
+    return chrome.tabs.sendMessage(tab.id, payload);
   }
 }
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !tab.url) throw new Error("找不到当前标签页");
+  if (!/^https?:/i.test(tab.url)) throw new Error("请先打开 Boss 或鱼泡的招聘网页");
   return tab;
+}
+
+function scheduleSaveFilters() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    chrome.storage.local.set({ filters: readFilters() });
+  }, 400);
+}
+
+async function refreshDashboard() {
+  const [sessionData, boss, yupao, history] = await Promise.all([
+    chrome.storage.local.get("session"),
+    ZpingExport.loadLedger("boss"),
+    ZpingExport.loadLedger("yupao"),
+    ZpingHistory.count(),
+  ]);
+  const session = sessionData.session;
+  const ledgerParts = [];
+  if (boss.length) ledgerParts.push(`Boss ${boss.length}`);
+  if (yupao.length) ledgerParts.push(`鱼泡 ${yupao.length}`);
+  const ledgerText = ledgerParts.length ? `累计 ${ledgerParts.join("，")}` : "暂无 Excel 记录";
+  const historyText = `去重 ${history.jobs} 职位`;
+  if (session?.running) {
+    const platform = session.platform === "yupao" ? "鱼泡" : "Boss";
+    setStatusBar(`进行中 · ${platform} · 已投 ${session.applied || 0} · 跳过 ${session.skipped || 0} · ${ledgerText}`, "running");
+    return;
+  }
+  setStatusBar(`${ledgerText} · ${historyText}`, "");
+}
+
+async function loadPresets() {
+  const data = await chrome.storage.local.get(PRESET_KEY);
+  return data[PRESET_KEY] || {};
+}
+
+async function refreshPresetSelect() {
+  const presets = await loadPresets();
+  const select = document.getElementById("preset-select");
+  const current = select.value;
+  select.innerHTML = '<option value="">-- 选择方案 --</option>';
+  Object.keys(presets).sort().forEach((name) => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    select.appendChild(option);
+  });
+  if (current && presets[current]) select.value = current;
 }
 
 async function startHere() {
@@ -135,13 +187,15 @@ async function startHere() {
   }
   const result = await sendToTab(tab, filters, "ZPING_START");
   setMessage(result?.message || "已开始，请看页面右下角确认框。");
-  if (result?.ok) window.close();
+  if (result?.ok) {
+    await refreshDashboard();
+    window.close();
+  }
 }
 
 async function startSearch() {
   const filters = readFilters();
-  await chrome.storage.local.set({ filters });
-  await chrome.storage.local.set({ autostart: { enabled: true, filters } });
+  await chrome.storage.local.set({ filters, autostart: { enabled: true, filters } });
   const tab = await activeTab();
   await chrome.tabs.update(tab.id, { url: searchUrl(filters) });
   setMessage("正在打开搜索页，列表出来后会自动开始。");
@@ -153,15 +207,48 @@ async function stop() {
   try {
     await sendToTab(tab, filters, "ZPING_STOP");
     setMessage("已停止。");
+    await refreshDashboard();
   } catch (error) {
     setMessage(error.message || "停止失败", true);
   }
 }
 
+async function exportExcel() {
+  const filters = readFilters();
+  const platform = filters.platform === "yupao" ? "yupao" : "boss";
+  const records = await ZpingExport.loadLedger(platform);
+  if (!records.length) {
+    setMessage("该平台尚无记录。请先完成一轮投递。", true);
+    return;
+  }
+  const count = await ZpingExport.downloadLedger(platform, records);
+  const name = ZpingExport.exportFilename(platform);
+  setMessage(`已更新 ${name}，累计 ${count} 条。`);
+}
+
+async function clearHistory() {
+  if (!confirm("确定清除所有去重记录？已投/已跳过的职位将不再自动过滤。")) return;
+  await ZpingHistory.clear();
+  setMessage("已清除去重记录。");
+  await refreshDashboard();
+}
+
+async function clearLedger() {
+  const filters = readFilters();
+  const platform = filters.platform === "yupao" ? "yupao" : "boss";
+  const name = ZpingExport.exportFilename(platform);
+  if (!confirm(`确定清空 ${name} 的累计记录？此操作不可恢复。`)) return;
+  await ZpingExport.clearLedger(platform);
+  setMessage(`已清空 ${name} 的累计记录。`);
+  await refreshDashboard();
+}
+
 fillCities();
+refreshPresetSelect();
 
 chrome.storage.local.get("filters").then(({ filters }) => {
   writeFilters({ ...DEFAULTS, ...(filters || {}) });
+  refreshDashboard();
 });
 
 chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
@@ -169,6 +256,9 @@ chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
   if (tab.url.includes("yupao.com")) form.platform.value = "yupao";
   if (tab.url.includes("zhipin.com")) form.platform.value = "boss";
 });
+
+form.addEventListener("change", scheduleSaveFilters);
+form.addEventListener("input", scheduleSaveFilters);
 
 document.getElementById("start-here").addEventListener("click", () => {
   startHere().catch((error) => setMessage(error.message, true));
@@ -179,21 +269,47 @@ document.getElementById("start-search").addEventListener("click", () => {
 document.getElementById("stop").addEventListener("click", () => {
   stop().catch((error) => setMessage(error.message, true));
 });
-async function exportExcel() {
-  const { zping_export: data } = await chrome.storage.local.get("zping_export");
-  if (!data?.records?.length) {
-    setMessage("没有可导出的记录。请先完成一轮投递。", true);
-    return;
-  }
-  const count = ZpingExport.downloadZpingXlsx(data);
-  setMessage(`已导出 ${count} 条记录为 .xlsx 文件。`);
-}
-
 document.getElementById("export").addEventListener("click", () => {
   exportExcel().catch((error) => setMessage(error.message, true));
 });
-chrome.storage.local.get("zping_export").then(({ zping_export }) => {
-  if (zping_export?.records?.length) {
-    setMessage(`上次共 ${zping_export.records.length} 条记录，可点「导出 Excel」。`);
+document.getElementById("clear-history").addEventListener("click", () => {
+  clearHistory().catch((error) => setMessage(error.message, true));
+});
+document.getElementById("clear-ledger").addEventListener("click", () => {
+  clearLedger().catch((error) => setMessage(error.message, true));
+});
+
+document.getElementById("preset-select").addEventListener("change", async () => {
+  const name = document.getElementById("preset-select").value;
+  if (!name) return;
+  const presets = await loadPresets();
+  if (!presets[name]) return;
+  writeFilters(presets[name]);
+  await chrome.storage.local.set({ filters: presets[name] });
+  setMessage(`已切换至「${name}」`);
+});
+
+document.getElementById("preset-save").addEventListener("click", async () => {
+  const name = prompt("方案名称（如：成都 Python）");
+  if (!name?.trim()) return;
+  const presets = await loadPresets();
+  presets[name.trim()] = readFilters();
+  await chrome.storage.local.set({ [PRESET_KEY]: presets });
+  await refreshPresetSelect();
+  document.getElementById("preset-select").value = name.trim();
+  setMessage(`已保存方案「${name.trim()}」`);
+});
+
+document.getElementById("preset-delete").addEventListener("click", async () => {
+  const name = document.getElementById("preset-select").value;
+  if (!name) {
+    setMessage("请先选择要删除的方案", true);
+    return;
   }
+  if (!confirm(`确定删除方案「${name}」？`)) return;
+  const presets = await loadPresets();
+  delete presets[name];
+  await chrome.storage.local.set({ [PRESET_KEY]: presets });
+  await refreshPresetSelect();
+  setMessage(`已删除「${name}」`);
 });

@@ -4,7 +4,7 @@
 
 <p align="center">在 Microsoft Edge 中按条件筛选职位，每次投递前人工确认公司、岗位、地点、薪资与学历，避免误投。</p>
 
-<p align="center">✨ <strong>当前版本 1.0.0</strong></p>
+<p align="center">✨ <strong>当前版本 1.2.0</strong></p>
 
 <p align="center">Edge 扩展 · Boss直聘 + 鱼泡网 · 投递前确认 · Excel 导出</p>
 
@@ -17,12 +17,16 @@
 🤖 <strong>半自动流程</strong> — 自动翻页、自动点「立即沟通 / 免费聊」，每一步由你决定<br>
 📊 <strong>Excel 导出</strong> — 导出 .xlsx 投递记录，投递状态与公司重复标记带颜色<br>
 🗺️ <strong>城市直达</strong> — 鱼泡网按所选城市打开对应列表（如成都 a322）<br>
-🔐 <strong>沿用登录态</strong> — 使用你已登录的 Edge 账号，无需额外配置
+🔐 <strong>沿用登录态</strong> — 使用你已登录的 Edge 账号，无需额外配置<br>
+🧠 <strong>投递去重记忆</strong> — 记住已投 / 已跳过 / 已沟通过的职位与公司，下次自动跳过<br>
+📄 <strong>完整 JD 抓取</strong> — 导出 JD详情 列为详情页职位描述全文<br>
+💾 <strong>筛选方案保存</strong> — 多套条件一键切换（如「成都 Python」「北京 Java」）<br>
+⏱️ <strong>投递间隔</strong> — 每次投递后等待 N 秒，降低风控风险
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Edge-Extension-0078D7?style=flat-square" alt="Edge Extension" />
-  <img src="https://img.shields.io/badge/version-1.0.0-brightgreen?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-1.2.0-brightgreen?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platform-Boss%20%2B%20%E9%B1%BC%E6%B3%A1-orange?style=flat-square" alt="platform" />
   <img src="https://img.shields.io/badge/export-.xlsx-217346?style=flat-square" alt="export" />
   <img src="https://img.shields.io/github/stars/Ms-liyc/BOSS-?style=flat-square" alt="stars" />
@@ -102,15 +106,55 @@ cd BOSS-
 
 ## 📊 导出 Excel
 
-每轮结束（跑完上限、手动停止）后，可点击 **导出 Excel**（确认面板或扩展弹窗均可）。
+按平台分别累积，固定文件名：
+
+| 平台 | 文件名 |
+|------|--------|
+| Boss直聘 | `BOSS直聘列表.xlsx` |
+| 鱼泡网 | `鱼泡网列表.xlsx` |
+
+每条记录处理后会**自动追加**到对应平台的累计表，并**立即下载/覆盖**同名 Excel 文件（浏览器若提示覆盖，选「替换」即可保持单一文件）。弹窗内也可按当前所选平台手动导出。
 
 | 列 | 内容 |
 |----|------|
-| 1–5 | 筛选五项（公司、学历、岗位、地点、薪资） |
-| 6 | 公司名称（**第一次**=绿色，**重复**=红色） |
-| 7 | 工资 |
-| 8 | 是否投递简历（**是**=绿色，**否**=红色） |
-| 9 | 招聘详细信息（岗位、地点、学历、时间、链接等） |
+| 1 | 筛选条件（城市、岗位、学历、薪资等合并为一列） |
+| 2 | 公司名称（**第一次**=绿色，**重复**=红色） |
+| 3 | 工作岗位 |
+| 4 | 工作地点 |
+| 5 | 学历要求 |
+| 6 | 工资 |
+| 7 | 职位标签（如 远程 / 双休 / 五险一金） |
+| 8 | 是否投递（**是**=绿色，**否**=红色） |
+| 9 | 处理时间 |
+| 10 | 职位链接 |
+| 11 | JD详情（详情页全文；未抓到则留空） |
+
+同一职位链接再次出现时，会用最新记录覆盖旧行，避免重复堆积。
+
+---
+
+## 🆕 v1.2 改进
+
+| 改进 | 说明 |
+|------|------|
+| 弹窗状态栏 | 显示进行中 / 已投 / 跳过 / Excel 累计条数 |
+| 去重策略优化 | **默认仅按职位链接去重**；可选开启「跳过整家公司」 |
+| 一键清理 | 弹窗内可清除去重记录、清空当前平台 Excel 累计 |
+| 键盘快捷键 | 确认面板：Y 确认 · N 跳过 · S 停止 |
+| 标签展示 | 确认面板显示职位标签（远程 / 双休等） |
+| 稳定性 | Boss 动态注入补 API 拦截；关闭 iframe 重复注入 |
+| Excel 着色 | 「已沟通过」改为橙色；导出按时间排序后标记公司重复 |
+| 鱼泡翻页 | 支持分页器、URL 参数与滚动加载兜底 |
+
+## 🆕 v1.1 功能
+
+| 功能 | 说明 |
+|------|------|
+| 投递去重记忆 | 本地记录已投 / 已跳过 / 已沟通过的职位，下次自动过滤 |
+| 完整 JD 抓取 | 异步拉取详情页描述，写入 JD详情 列 |
+| 筛选方案 | 多套条件一键切换 |
+| Boss 自动翻页 | 连续扫描多页 |
+| 投递间隔 | 每次成功投递后等待 N 秒 |
 
 ---
 
@@ -129,6 +173,7 @@ BOSS-/
     │   └── inject.js       # Boss API 数据拦截
     └── lib/
         ├── cities.js       # 城市编码（含鱼泡 URL）
+        ├── history.js      # 投递去重记忆
         ├── zping-export.js # Excel 导出逻辑
         └── xlsx.bundle.js  # Excel 样式库
 ```

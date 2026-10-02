@@ -3,17 +3,48 @@
   window.__zpingHooked = true;
 
   let lastJobs = [];
+  let lastUrl = "";
 
-  function takeList(data) {
-    const list = data?.zpData?.jobList || data?.zpData?.list;
-    if (!Array.isArray(list) || !list.length) return false;
-    if (!list[0] || (!list[0].jobName && !list[0].salaryDesc)) return false;
+  function normalizeItem(item) {
+    if (!item || typeof item !== "object") return null;
+    const title = item.jobName || item.title || item.name;
+    const salary = item.salaryDesc || item.salary || item.salaryMonth;
+    if (!title && !salary) return null;
+    return item;
+  }
+
+  function extractList(data) {
+    const zp = data?.zpData;
+    const candidates = [
+      zp?.jobList,
+      zp?.list,
+      zp?.cardList,
+      zp?.jobs,
+      data?.jobList,
+      data?.list,
+    ];
+    for (const list of candidates) {
+      if (!Array.isArray(list) || !list.length) continue;
+      const normalized = list.map(normalizeItem).filter(Boolean);
+      if (normalized.length) return normalized;
+    }
+    return null;
+  }
+
+  function takeList(data, url) {
+    const list = extractList(data);
+    if (!list) return false;
     lastJobs = list;
+    lastUrl = String(url || "");
     return true;
   }
 
   function publish(jobs, message) {
     window.postMessage({ source: "zping", type: "jobs-result", jobs, message: message || "" }, "*");
+  }
+
+  function shouldWatch(url) {
+    return /\/wapi\/zpgeek\//i.test(String(url || ""));
   }
 
   const originalFetch = window.fetch;
@@ -22,8 +53,8 @@
     try {
       const input = args[0];
       const url = typeof input === "string" ? input : input?.url || "";
-      if (url.includes("/wapi/zpgeek/")) {
-        response.clone().json().then(takeList).catch(() => {});
+      if (shouldWatch(url)) {
+        response.clone().json().then((data) => takeList(data, url)).catch(() => {});
       }
     } catch {
       /* 页面自己的请求失败时不要影响原逻辑 */
@@ -40,8 +71,8 @@
   XMLHttpRequest.prototype.send = function (...args) {
     this.addEventListener("load", () => {
       try {
-        if (!String(this.__zpingUrl || "").includes("/wapi/zpgeek/")) return;
-        takeList(JSON.parse(this.responseText));
+        if (!shouldWatch(this.__zpingUrl)) return;
+        takeList(JSON.parse(this.responseText), this.__zpingUrl);
       } catch {
         /* 非职位接口 */
       }
@@ -51,26 +82,28 @@
 
   window.addEventListener("message", async (event) => {
     if (event.source !== window || event.data?.source !== "zping-ask") return;
-    if (lastJobs.length) {
+    const query = event.data.query || "";
+    const city = event.data.city || "";
+    const page = Number(event.data.page) || 1;
+    const force = Boolean(event.data.force);
+    if (!force && page === 1 && lastJobs.length) {
       publish(lastJobs, "");
       return;
     }
-    const query = event.data.query || "";
-    const city = event.data.city || "";
     const urls = [
-      `/wapi/zpgeek/search/joblist.json?scene=1&query=${encodeURIComponent(query)}&city=${encodeURIComponent(city)}&page=1&pageSize=15`,
-      `/wapi/zpgeek/pc/recommend/job/list.json?page=1&pageSize=15&city=${encodeURIComponent(city)}&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=`,
+      `/wapi/zpgeek/search/joblist.json?scene=1&query=${encodeURIComponent(query)}&city=${encodeURIComponent(city)}&page=${page}&pageSize=30`,
+      `/wapi/zpgeek/pc/recommend/job/list.json?page=${page}&pageSize=30&city=${encodeURIComponent(city)}&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=`,
     ];
     let message = "没有从接口拿到职位";
     for (const url of urls) {
       try {
         const response = await originalFetch(url, { credentials: "include" });
         const data = await response.json();
-        if (takeList(data)) {
+        if (takeList(data, url)) {
           publish(lastJobs, "");
           return;
         }
-        message = data?.message || `接口返回 ${data?.code}`;
+        message = data?.message || data?.zpData?.message || `接口返回 ${data?.code}`;
       } catch (error) {
         message = error?.message || message;
       }

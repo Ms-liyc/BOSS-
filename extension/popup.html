@@ -11,6 +11,8 @@
     <p>使用当前 Edge 登录状态，投递前会在页面上确认。</p>
   </header>
 
+  <div id="status-bar" class="status-bar">加载中…</div>
+
   <form id="form">
     <label>
       平台
@@ -46,8 +48,9 @@
       <select name="education">
         <option value="">不限</option>
         <option>初中</option>
-        <option>高中</option>
         <option>中专</option>
+        <option>中技</option>
+        <option>高中</option>
         <option>大专</option>
         <option>本科</option>
         <option>硕士</option>
@@ -76,14 +79,44 @@
       </label>
     </div>
 
+    <label>
+      投递间隔（秒，0 为不等待）
+      <input name="applyDelay" type="number" min="0" step="1" />
+    </label>
+
+    <label class="checkbox">
+      <input name="skipCompanyHistory" type="checkbox" />
+      <span>跳过整家公司（开启后，同公司任一职位处理过即全部跳过）</span>
+    </label>
+
+    <div class="presets">
+      <label>
+        筛选方案
+        <div class="preset-row">
+          <select id="preset-select">
+            <option value="">-- 选择方案 --</option>
+          </select>
+          <button type="button" id="preset-save" class="ghost small">保存</button>
+          <button type="button" id="preset-delete" class="ghost small">删除</button>
+        </div>
+      </label>
+    </div>
+
     <button type="button" id="start-here" class="primary">在当前页开始</button>
     <button type="button" id="start-search">打开搜索页并开始</button>
     <button type="button" id="stop" class="ghost">停止</button>
     <button type="button" id="export" class="ghost">导出 Excel</button>
+
+    <div class="tools">
+      <button type="button" id="clear-history" class="ghost small">清除去重记录</button>
+      <button type="button" id="clear-ledger" class="ghost small">清空当前平台 Excel 累计</button>
+    </div>
+
     <p id="message"></p>
   </form>
 
   <script src="lib/cities.js"></script>
+  <script src="lib/history.js"></script>
   <script src="lib/xlsx.bundle.js"></script>
   <script src="lib/zping-export.js"></script>
   <script src="popup.js"></script>
