@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zping</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>Zping 简历投递</h1>
+    <p>使用当前 Edge 登录状态，投递前会在页面上确认。</p>
+  </header>
+
+  <form id="form">
+    <label>
+      平台
+      <select name="platform">
+        <option value="boss">Boss直聘</option>
+        <option value="yupao">鱼泡网</option>
+      </select>
+    </label>
+
+    <label>
+      工作岗位
+      <input name="keyword" type="text" placeholder="例如 Python开发" />
+    </label>
+
+    <label>
+      工作地点
+      <select name="city"></select>
+    </label>
+
+    <div class="pair">
+      <label>
+        薪资最低（k/月）
+        <input name="salaryMin" type="number" min="0" step="1" />
+      </label>
+      <label>
+        薪资最高（k/月）
+        <input name="salaryMax" type="number" min="0" step="1" />
+      </label>
+    </div>
+
+    <label>
+      学历
+      <select name="education">
+        <option value="">不限</option>
+        <option>初中</option>
+        <option>高中</option>
+        <option>中专</option>
+        <option>大专</option>
+        <option>本科</option>
+        <option>硕士</option>
+        <option>博士</option>
+      </select>
+    </label>
+
+    <label>
+      公司名称（多个用逗号分隔，空为不限）
+      <input name="companies" type="text" placeholder="字节跳动,腾讯" />
+    </label>
+
+    <label>
+      排除公司
+      <input name="exclude" type="text" placeholder="外包,猎头" />
+    </label>
+
+    <div class="pair">
+      <label>
+        最多投递
+        <input name="maxApply" type="number" min="1" step="1" />
+      </label>
+      <label>
+        最多翻页
+        <input name="maxPages" type="number" min="1" step="1" />
+      </label>
+    </div>
+
+    <button type="button" id="start-here" class="primary">在当前页开始</button>
+    <button type="button" id="start-search">打开搜索页并开始</button>
+    <button type="button" id="stop" class="ghost">停止</button>
+    <button type="button" id="export" class="ghost">导出 Excel</button>
+    <p id="message"></p>
+  </form>
+
+  <script src="lib/cities.js"></script>
+  <script src="lib/xlsx.bundle.js"></script>
+  <script src="lib/zping-export.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
