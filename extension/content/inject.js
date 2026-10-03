@@ -2,6 +2,9 @@
   if (window.__zpingHooked) return;
   window.__zpingHooked = true;
 
+  const NONCE = crypto.randomUUID();
+  document.documentElement.dataset.zpingNonce = NONCE;
+
   let lastJobs = [];
   let lastUrl = "";
 
@@ -40,7 +43,13 @@
   }
 
   function publish(jobs, message) {
-    window.postMessage({ source: "zping", type: "jobs-result", jobs, message: message || "" }, "*");
+    window.postMessage({
+      source: "zping",
+      type: "jobs-result",
+      nonce: NONCE,
+      jobs,
+      message: message || "",
+    }, window.location.origin);
   }
 
   function shouldWatch(url) {
@@ -81,7 +90,8 @@
   };
 
   window.addEventListener("message", async (event) => {
-    if (event.source !== window || event.data?.source !== "zping-ask") return;
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    if (event.data?.source !== "zping-ask" || event.data?.nonce !== NONCE) return;
     const query = event.data.query || "";
     const city = event.data.city || "";
     const page = Number(event.data.page) || 1;

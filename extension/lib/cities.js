@@ -79,6 +79,30 @@
     return `当前不在「${city}」列表页。请点扩展里的「打开搜索页并开始」，或先在鱼泡网页顶部切换到${city}。`;
   }
 
+  function isAllowedHost(url, platform) {
+    try {
+      const host = new URL(url).hostname;
+      if (platform === "yupao") return /(^|\.)yupao\.com$/i.test(host);
+      return /(^|\.)zhipin\.com$/i.test(host);
+    } catch {
+      return false;
+    }
+  }
+
+  function platformForUrl(url) {
+    if (/yupao\.com/i.test(String(url || ""))) return "yupao";
+    if (/zhipin\.com/i.test(String(url || ""))) return "boss";
+    return null;
+  }
+
+  function isListPage(url, platform) {
+    const value = String(url || "");
+    if (platform === "yupao") {
+      return /yupao\.com\/zhaogong\/a\d+/i.test(value) && !/\/zhaogong\/\d+\.html/i.test(value);
+    }
+    return /zhipin\.com/i.test(value) && /\/web\/geek\/job|\/geek\/jobs/i.test(value);
+  }
+
   global.ZpingCities = {
     CITIES,
     EDU_LEVELS,
@@ -88,5 +112,8 @@
     bossSearchUrl,
     yupaoCityInPath,
     yupaoCityHint,
+    isAllowedHost,
+    platformForUrl,
+    isListPage,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

@@ -430,7 +430,8 @@
     id: "yupao",
     label: "鱼泡网",
     cityPageHint,
-    isListPage: () => !location.pathname.includes("/chat") && !isDetailPath() && /\/zhaogong\/a\d+/i.test(location.pathname),
+    isListPage: () => !location.pathname.includes("/chat") && !isDetailPath()
+      && (globalThis.ZpingCities?.isListPage?.(location.href, "yupao") || /\/zhaogong\/a\d+/i.test(location.pathname)),
     isDetailPage: isDetailPath,
     collectJobs,
     scanHint: () => scanHint,

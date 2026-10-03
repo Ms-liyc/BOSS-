@@ -15,6 +15,10 @@
     yupao: "鱼泡网列表.xlsx",
   };
 
+  const MAX_LEDGER = 3000;
+  const MAX_DETAIL_STORE = 8000;
+  const queue = global.ZpingStorageQueue?.enqueue || ((task) => task());
+
   const COLOR = {
     greenFont: "FF15803D",
     greenFill: "FFE8F5E9",
@@ -62,8 +66,13 @@
     return Array.from(map.values());
   }
 
+  function sanitizeExcelValue(value) {
+    const text = String(value ?? "");
+    return /^[=+\-@]/.test(text) ? `'${text}` : text;
+  }
+
   function textCell(value) {
-    return { v: String(value ?? ""), t: "s" };
+    return { v: sanitizeExcelValue(value), t: "s" };
   }
 
   function styledCell(value, kind) {
@@ -74,7 +83,7 @@
     };
     const [font, fill] = palette[kind] || palette.red;
     return {
-      v: String(value ?? ""),
+      v: sanitizeExcelValue(value),
       t: "s",
       s: {
         font: { bold: true, color: { rgb: font } },
@@ -182,22 +191,33 @@
     return data[storageKey]?.records || [];
   }
 
+  function trimRecords(records) {
+    const trimmed = (records || []).map((row) => ({
+      ...row,
+      detail: row.detail ? String(row.detail).slice(0, MAX_DETAIL_STORE) : row.detail,
+    }));
+    if (trimmed.length <= MAX_LEDGER) return trimmed;
+    return sortRecordsByTime(trimmed).slice(-MAX_LEDGER);
+  }
+
   async function saveLedger(platform, records) {
     const key = platformKey(platform);
+    const safe = trimRecords(records);
     await chrome.storage.local.set({
       [LEDGER_KEYS[key]]: {
-        records,
+        records: safe,
         updatedAt: Date.now(),
       },
     });
-    return records;
+    return safe;
   }
 
   async function appendToLedger(platform, records) {
     if (!records?.length) return await loadLedger(platform);
-    const merged = mergeRecords(await loadLedger(platform), records);
-    await saveLedger(platform, merged);
-    return merged;
+    return queue(async () => {
+      const merged = mergeRecords(await loadLedger(platform), records);
+      return saveLedger(platform, merged);
+    });
   }
 
   async function downloadLedger(platform, records) {

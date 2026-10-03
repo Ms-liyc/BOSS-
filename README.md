@@ -4,7 +4,7 @@
 
 <p align="center">在 Microsoft Edge 中按条件筛选职位，每次投递前人工确认公司、岗位、地点、薪资与学历，避免误投。</p>
 
-<p align="center">✨ <strong>当前版本 1.2.0</strong></p>
+<p align="center">✨ <strong>当前版本 1.2.2</strong></p>
 
 <p align="center">Edge 扩展 · Boss直聘 + 鱼泡网 · 投递前确认 · Excel 导出</p>
 
@@ -26,7 +26,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Edge-Extension-0078D7?style=flat-square" alt="Edge Extension" />
-  <img src="https://img.shields.io/badge/version-1.2.0-brightgreen?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-1.2.2-brightgreen?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platform-Boss%20%2B%20%E9%B1%BC%E6%B3%A1-orange?style=flat-square" alt="platform" />
   <img src="https://img.shields.io/badge/export-.xlsx-217346?style=flat-square" alt="export" />
   <img src="https://img.shields.io/github/stars/Ms-liyc/BOSS-?style=flat-square" alt="stars" />
@@ -113,7 +113,7 @@ cd BOSS-
 | Boss直聘 | `BOSS直聘列表.xlsx` |
 | 鱼泡网 | `鱼泡网列表.xlsx` |
 
-每条记录处理后会**自动追加**到对应平台的累计表，并**立即下载/覆盖**同名 Excel 文件（浏览器若提示覆盖，选「替换」即可保持单一文件）。弹窗内也可按当前所选平台手动导出。
+每条记录处理后会**自动追加**到对应平台的累计表；点击确认面板的 **「停止」** 或本轮自然结束时，会**自动下载/覆盖**同名 Excel 文件（浏览器若提示覆盖，选「替换」即可）。弹窗内也可随时手动导出。
 
 | 列 | 内容 |
 |----|------|
@@ -132,6 +132,17 @@ cd BOSS-
 同一职位链接再次出现时，会用最新记录覆盖旧行，避免重复堆积。
 
 ---
+
+## 🆕 v1.2.2 安全与稳定性
+
+| 改进 | 说明 |
+|------|------|
+| API 数据可信 | Boss 职位优先由扩展直接请求接口，postMessage 需 nonce 校验 |
+| 站点校验 | 仅在 Boss/鱼泡官网注入脚本，平台与 URL 必须一致 |
+| 防重复启动 | 已有任务进行中时拒绝再次开始 |
+| 存储串行化 | 去重记录与 Excel 累计写入加队列，避免并发丢失 |
+| 防重复计数 | 鱼泡聊天页不再重复记「已投递」 |
+| Excel 防注入 | 单元格内容过滤公式前缀；累计表有容量上限 |
 
 ## 🆕 v1.2 改进
 

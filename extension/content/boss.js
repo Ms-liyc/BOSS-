@@ -40,16 +40,53 @@
     return [...document.querySelectorAll("li")].filter((el) => el.querySelector(".job-name, .job-salary, a[href*='job_detail'], a[href*='/job/']"));
   }
 
-  function askApi(force = false) {
-    const params = new URL(location.href).searchParams;
-    const page = Number(params.get("page") || 1);
+  function zpingNonce() {
+    return document.documentElement.dataset.zpingNonce || "";
+  }
+
+  function extractApiList(data) {
+    const zp = data?.zpData;
+    const candidates = [zp?.jobList, zp?.list, zp?.cardList, zp?.jobs, data?.jobList, data?.list];
+    for (const list of candidates) {
+      if (Array.isArray(list) && list.length) return list;
+    }
+    return [];
+  }
+
+  async function fetchApiJobs(params, page) {
+    const query = params.get("query") || "";
+    const city = params.get("city") || "";
+    const urls = [
+      `https://www.zhipin.com/wapi/zpgeek/search/joblist.json?scene=1&query=${encodeURIComponent(query)}&city=${encodeURIComponent(city)}&page=${page}&pageSize=30`,
+      `https://www.zhipin.com/wapi/zpgeek/pc/recommend/job/list.json?page=${page}&pageSize=30&city=${encodeURIComponent(city)}&encryptExpectId=&mixExpectType=&expectInfo=&jobType=&salary=&experience=&degree=&industry=&scale=`,
+    ];
+    let message = "没有从接口拿到职位";
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, { credentials: "include" });
+        const data = await response.json();
+        const jobs = extractApiList(data);
+        if (jobs.length) return { jobs, message: "" };
+        message = data?.message || data?.zpData?.message || message;
+      } catch (error) {
+        message = error?.message || message;
+      }
+    }
+    return { jobs: [], message };
+  }
+
+  function askApiViaMessage(params, page, force) {
+    const nonce = zpingNonce();
+    if (!nonce) return Promise.resolve(null);
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         window.removeEventListener("message", onMessage);
-        resolve({ jobs: [], message: "读取职位接口超时，将尝试从页面卡片识别。" });
-      }, 8000);
+        resolve(null);
+      }, 4000);
       function onMessage(event) {
+        if (event.origin !== location.origin) return;
         if (event.source !== window || event.data?.source !== "zping" || event.data?.type !== "jobs-result") return;
+        if (event.data?.nonce !== nonce) return;
         clearTimeout(timer);
         window.removeEventListener("message", onMessage);
         resolve({ jobs: event.data.jobs || [], message: event.data.message || "" });
@@ -57,12 +94,23 @@
       window.addEventListener("message", onMessage);
       window.postMessage({
         source: "zping-ask",
+        nonce,
         query: params.get("query") || "",
         city: params.get("city") || "",
         page,
         force,
-      }, "*");
+      }, location.origin);
     });
+  }
+
+  async function askApi(force = false) {
+    const params = new URL(location.href).searchParams;
+    const page = Number(params.get("page") || 1);
+    const direct = await fetchApiJobs(params, page);
+    if (direct.jobs.length) return direct;
+    const viaMessage = await askApiViaMessage(params, page, force);
+    if (viaMessage?.jobs?.length) return viaMessage;
+    return direct.jobs.length ? direct : (viaMessage || direct);
   }
 
   function jobIdFromHref(href) {
@@ -458,7 +506,7 @@
   Zping.boot({
     id: "boss",
     label: "Boss直聘",
-    isListPage: () => /\/web\/geek\/job|\/geek\/jobs/i.test(location.pathname),
+    isListPage: () => globalThis.ZpingCities?.isListPage?.(location.href, "boss") || /\/web\/geek\/job|\/geek\/jobs/i.test(location.pathname),
     isDetailPage: () => /job_detail|\/job\//i.test(location.pathname),
     collectJobs,
     scanHint: () => scanHint,

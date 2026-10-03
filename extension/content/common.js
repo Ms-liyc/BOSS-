@@ -327,14 +327,7 @@
       });
       const record = session.records[session.records.length - 1];
       const platform = session.platform === "yupao" ? "yupao" : "boss";
-      const merged = await globalThis.ZpingExport.appendToLedger(platform, [record]);
-      try {
-        const count = await globalThis.ZpingExport.downloadLedger(platform, merged);
-        const name = globalThis.ZpingExport.exportFilename(platform);
-        setStatus(`已更新 ${name}（累计 ${count} 条）`);
-      } catch (error) {
-        setStatus(error?.message || "Excel 更新失败");
-      }
+      await globalThis.ZpingExport.appendToLedger(platform, [record]);
     } finally {
       applying = false;
       if (session?.running) {
@@ -373,21 +366,22 @@
     shadow.getElementById("export-wrap").classList.toggle("show", show);
   }
 
-  async function endRun(message) {
+  async function endRun(message, options = {}) {
     const exportData = await saveExportSnapshot();
     const platform = exportData.platform === "yupao" ? "yupao" : "boss";
-    if (exportData.records.length) {
+    const total = (await globalThis.ZpingExport.loadLedger(platform)).length;
+    const shouldSave = options.saveExcel !== false && total > 0;
+    if (shouldSave) {
       try {
         await globalThis.ZpingExport.downloadLedger(platform);
       } catch {
         /* 导出失败不阻断结束流程 */
       }
     }
-    const total = (await globalThis.ZpingExport.loadLedger(platform)).length;
     await saveSession(null);
     showExportButton(total > 0);
     const fileName = globalThis.ZpingExport.exportFilename(platform);
-    const tail = total ? `，已更新 ${fileName}（累计 ${total} 条）` : "";
+    const tail = shouldSave && total ? `，已自动保存 ${fileName}（累计 ${total} 条）` : "";
     setStatus(message || `本轮结束。已投 ${exportData.applied}，跳过 ${exportData.skipped}${tail}。`);
   }
 
@@ -509,6 +503,9 @@
 
   async function begin(filters) {
     adapter.reset?.();
+    if (filters?.platform && filters.platform !== adapter.id) {
+      return { ok: false, message: `当前页面是 ${adapter.label}，请切换扩展里的平台选项。` };
+    }
     if (!adapter.isListPage()) {
       return { ok: false, message: "请先打开职位列表页。" };
     }
@@ -684,12 +681,12 @@
   }
 
   async function stop() {
-    await endRun("已停止。可点「导出 Excel」保存本轮记录。");
+    await endRun(null, { saveExcel: true });
     document.querySelectorAll(".zping-highlight").forEach((el) => el.classList.remove("zping-highlight"));
   }
 
   async function finish(text) {
-    await endRun(text);
+    await endRun(text, { saveExcel: true });
   }
 
   async function advance() {
@@ -780,7 +777,8 @@
       await saveSession(session);
       setStatus("没找到投递按钮，返回列表。");
       await sleep(800);
-      location.assign(session.listUrl);
+      if (session.listUrl) location.assign(session.listUrl);
+      else history.back();
       return;
     }
     const label = button.innerText.trim();
@@ -802,7 +800,8 @@
     session.phase = "confirm";
     await saveSession(session);
     await sleep(900);
-    location.assign(session.listUrl);
+    if (session.listUrl) location.assign(session.listUrl);
+    else history.back();
   }
 
   async function resumeOnList() {
@@ -831,12 +830,18 @@
     await renderJob();
   }
 
+  function recordExists(job, result) {
+    const url = String(job?.url || "").split("?")[0];
+    return (session?.records || []).some((row) => row.result === result && String(row.url || "").split("?")[0] === url);
+  }
+
   async function maybeAutostart() {
     const data = await chrome.storage.local.get("autostart");
     const auto = data.autostart;
     if (!auto?.enabled || !adapter.isListPage()) return;
-    await chrome.storage.local.remove("autostart");
-    await begin(auto.filters);
+    if (auto.filters?.platform && auto.filters.platform !== adapter.id) return;
+    const result = await begin(auto.filters);
+    if (result?.ok) await chrome.storage.local.remove("autostart");
   }
 
   async function boot(nextAdapter) {
@@ -849,14 +854,20 @@
           sendResponse({ ok: false, message: "请先打开职位列表页。" });
           return false;
         }
-        // 先回复弹窗，再扫描。弹窗关闭不会再把消息通道掐断。
-        sendResponse({ ok: true, message: "正在扫描职位，请看页面右下角。" });
+        if (message.filters?.platform && message.filters.platform !== adapter.id) {
+          sendResponse({ ok: false, message: `当前页面是 ${adapter.label}，请切换扩展里的平台选项。` });
+          return false;
+        }
+        if (session?.running) {
+          sendResponse({ ok: false, message: "已有任务进行中，请先点「停止」。" });
+          return false;
+        }
         ensurePanel();
         setStatus("正在扫描职位…");
-        begin(message.filters).catch((error) => {
-          setStatus(error?.message || "启动失败");
-        });
-        return false;
+        begin(message.filters)
+          .then((result) => sendResponse(result || { ok: true, message: "已开始。" }))
+          .catch((error) => sendResponse({ ok: false, message: error?.message || "启动失败" }));
+        return true;
       }
       if (message.type === "ZPING_STOP") {
         sendResponse({ ok: true, message: "已停止。" });
@@ -894,11 +905,13 @@
         return;
       }
       if (session.phase === "opening-chat") {
-        if (job) await addRecord(job, "已投递");
-        session.applied = (session.applied || 0) + 1;
+        if (job && !recordExists(job, "已投递")) {
+          await addRecord(job, "已投递");
+          session.applied = (session.applied || 0) + 1;
+          await waitApplyDelay();
+        }
         session.phase = "chat-shown";
         await saveSession(session);
-        await waitApplyDelay();
       }
       if (job) {
         shadow.getElementById("meta").textContent = "对话已打开";
@@ -910,6 +923,12 @@
       }
       setButtons("next");
       setStatus("第 3 步：对话已出现。看完点「下一条」，回到列表继续。");
+      return;
+    }
+    if (session?.running && session.platform !== adapter.id) {
+      ensurePanel();
+      const other = session.platform === "yupao" ? "鱼泡网" : "Boss直聘";
+      setStatus(`进行中的任务是 ${other}。请回到对应网站继续，或点扩展里的「停止」。`);
       return;
     }
     if (session?.running && session.platform === adapter.id) {

@@ -2,6 +2,7 @@
   const KEY = "zping_history";
   const MAX_JOBS = 4000;
   const BLOCK_RESULTS = new Set(["已投递", "已跳过", "已沟通过"]);
+  const queue = global.ZpingStorageQueue?.enqueue || ((task) => task());
 
   function normalizeCompany(name) {
     return String(name || "").replace(/\s+/g, "").trim().toLowerCase();
@@ -44,23 +45,25 @@
 
   async function remember(job, result, platform, options = {}) {
     if (!job) return;
-    const history = await load();
-    const id = jobId(job);
-    const entry = {
-      result,
-      company: job.company || "",
-      title: job.title || "",
-      platform: platform || "",
-      time: Date.now(),
-    };
-    if (id) history.jobs[id] = entry;
-    if (options.skipCompany) {
-      const company = normalizeCompany(job.company);
-      if (company && BLOCK_RESULTS.has(result)) {
-        history.companies[company] = { result, time: Date.now() };
+    return queue(async () => {
+      const history = await load();
+      const id = jobId(job);
+      const entry = {
+        result,
+        company: job.company || "",
+        title: job.title || "",
+        platform: platform || "",
+        time: Date.now(),
+      };
+      if (id) history.jobs[id] = entry;
+      if (options.skipCompany) {
+        const company = normalizeCompany(job.company);
+        if (company && BLOCK_RESULTS.has(result)) {
+          history.companies[company] = { result, time: Date.now() };
+        }
       }
-    }
-    await save(history);
+      await save(history);
+    });
   }
 
   async function clear() {

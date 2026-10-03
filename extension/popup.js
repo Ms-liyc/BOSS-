@@ -82,14 +82,19 @@ function searchUrl(filters) {
 }
 
 function onListPage(url, platform) {
-  if (platform === "yupao") {
-    return /yupao\.com\/zhaogong\//i.test(url) && !/\/zhaogong\/\d+\.html/i.test(url);
+  return ZpingCities.isListPage(url, platform);
+}
+
+function ensurePlatformMatch(tabUrl, filters) {
+  const detected = ZpingCities.platformForUrl(tabUrl);
+  if (detected && detected !== filters.platform) {
+    const name = detected === "yupao" ? "鱼泡网" : "Boss直聘";
+    throw new Error(`当前页面是 ${name}，请把扩展里的平台切换为 ${name}。`);
   }
-  return /zhipin\.com/i.test(url) && /\/web\/geek\/job/i.test(url);
 }
 
 function scriptFiles(platform) {
-  const shared = ["lib/cities.js", "lib/history.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js"];
+  const shared = ["lib/cities.js", "lib/storage-queue.js", "lib/history.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js"];
   return platform === "yupao"
     ? [...shared, "content/yupao.js"]
     : [...shared, "content/boss.js"];
@@ -104,10 +109,16 @@ async function injectBoss(tabId) {
 }
 
 async function sendToTab(tab, filters, type) {
+  if (!ZpingCities.isAllowedHost(tab.url, filters.platform)) {
+    throw new Error("只能在 Boss 或鱼泡官网页面使用本扩展");
+  }
   const payload = { type, filters };
   try {
     return await chrome.tabs.sendMessage(tab.id, payload);
   } catch (error) {
+    if (!ZpingCities.isAllowedHost(tab.url, filters.platform)) {
+      throw new Error("只能在 Boss 或鱼泡官网页面使用本扩展");
+    }
     if (filters.platform === "boss") {
       try {
         await injectBoss(tab.id);
@@ -123,10 +134,13 @@ async function sendToTab(tab, filters, type) {
   }
 }
 
-async function activeTab() {
+async function activeTab(filters) {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id || !tab.url) throw new Error("找不到当前标签页");
   if (!/^https?:/i.test(tab.url)) throw new Error("请先打开 Boss 或鱼泡的招聘网页");
+  if (filters && !ZpingCities.isAllowedHost(tab.url, filters.platform)) {
+    throw new Error(`请先打开${filters.platform === "yupao" ? "鱼泡" : "Boss"}官网页面`);
+  }
   return tab;
 }
 
@@ -180,7 +194,8 @@ async function refreshPresetSelect() {
 async function startHere() {
   const filters = readFilters();
   await chrome.storage.local.set({ filters });
-  const tab = await activeTab();
+  const tab = await activeTab(filters);
+  ensurePlatformMatch(tab.url, filters);
   if (!onListPage(tab.url, filters.platform)) {
     setMessage("请先打开对应网站的职位列表，或使用「打开搜索页并开始」。", true);
     return;
@@ -196,14 +211,16 @@ async function startHere() {
 async function startSearch() {
   const filters = readFilters();
   await chrome.storage.local.set({ filters, autostart: { enabled: true, filters } });
-  const tab = await activeTab();
+  const tab = await activeTab(filters);
+  ensurePlatformMatch(tab.url, filters);
   await chrome.tabs.update(tab.id, { url: searchUrl(filters) });
   setMessage("正在打开搜索页，列表出来后会自动开始。");
 }
 
 async function stop() {
   const filters = readFilters();
-  const tab = await activeTab();
+  const tab = await activeTab(filters);
+  ensurePlatformMatch(tab.url, filters);
   try {
     await sendToTab(tab, filters, "ZPING_STOP");
     setMessage("已停止。");
@@ -253,8 +270,8 @@ chrome.storage.local.get("filters").then(({ filters }) => {
 
 chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
   if (!tab?.url) return;
-  if (tab.url.includes("yupao.com")) form.platform.value = "yupao";
-  if (tab.url.includes("zhipin.com")) form.platform.value = "boss";
+  const detected = ZpingCities.platformForUrl(tab.url);
+  if (detected) form.platform.value = detected;
 });
 
 form.addEventListener("change", scheduleSaveFilters);
