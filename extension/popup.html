@@ -68,6 +68,16 @@
       <input name="exclude" type="text" placeholder="外包,猎头" />
     </label>
 
+    <label>
+      排除岗位（多个用逗号分隔）
+      <input name="excludeTitle" type="text" placeholder="销售,实习,外包" />
+    </label>
+
+    <label>
+      必须包含标签（多个用逗号分隔，空为不限）
+      <input name="requiredTags" type="text" placeholder="远程,双休" />
+    </label>
+
     <div class="pair">
       <label>
         最多投递
@@ -87,6 +97,11 @@
     <label class="checkbox">
       <input name="skipCompanyHistory" type="checkbox" />
       <span>跳过整家公司（开启后，同公司任一职位处理过即全部跳过）</span>
+    </label>
+
+    <label class="checkbox">
+      <input name="skipNegotiable" type="checkbox" />
+      <span>跳过薪资「面议」的职位</span>
     </label>
 
     <div class="presets">
@@ -112,11 +127,19 @@
       <button type="button" id="clear-ledger" class="ghost small">清空当前平台 Excel 累计</button>
     </div>
 
+    <div class="tools backup-tools">
+      <button type="button" id="backup-export" class="ghost small">备份数据</button>
+      <button type="button" id="backup-import" class="ghost small">恢复数据</button>
+      <input type="file" id="backup-file" accept=".json,application/json" hidden />
+    </div>
+
+    <p class="footnote">确认面板快捷键：Y 确认 · N 跳过 · S 停止</p>
     <p id="message"></p>
   </form>
 
   <script src="lib/cities.js"></script>
   <script src="lib/history.js"></script>
+  <script src="lib/backup.js"></script>
   <script src="lib/xlsx.bundle.js"></script>
   <script src="lib/zping-export.js"></script>
   <script src="popup.js"></script>

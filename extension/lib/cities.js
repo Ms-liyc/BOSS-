@@ -103,6 +103,14 @@
     return /zhipin\.com/i.test(value) && /\/web\/geek\/job|\/geek\/jobs/i.test(value);
   }
 
+  function isLoginPage(url, platform) {
+    const value = String(url || "");
+    if (platform === "yupao") {
+      return /\/login|\/signin|passport|\/user\/login/i.test(value);
+    }
+    return /\/login|\/web\/user|passport/i.test(value);
+  }
+
   global.ZpingCities = {
     CITIES,
     EDU_LEVELS,
@@ -115,5 +123,6 @@
     isAllowedHost,
     platformForUrl,
     isListPage,
+    isLoginPage,
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

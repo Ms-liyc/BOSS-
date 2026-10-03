@@ -114,6 +114,17 @@ button.ghost {
   margin-top: 4px;
 }
 
+.backup-tools {
+  grid-template-columns: 1fr 1fr;
+}
+
+.footnote {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #9aa5b1;
+  text-align: center;
+}
+
 button.small {
   margin-top: 0;
   padding: 6px 8px;

@@ -75,6 +75,17 @@
     if (excludes.some((word) => company.includes(word) || title.includes(word))) return false;
     if (includes.length && !includes.some((word) => company.includes(word))) return false;
 
+    const excludeTitles = splitWords(filters.excludeTitle);
+    if (excludeTitles.some((word) => title.includes(word))) return false;
+
+    const requiredTags = splitWords(filters.requiredTags);
+    if (requiredTags.length) {
+      const tagText = String(job.tags || "");
+      if (!requiredTags.some((word) => tagText.includes(word))) return false;
+    }
+
+    if (filters.skipNegotiable && /面议/.test(String(job.salary || ""))) return false;
+
     const required = eduIndex(filters.education);
     const actual = eduIndex(job.education);
     if (required >= 0 && actual > required) return false;
@@ -316,6 +327,9 @@
       filterEducation: f.education || "不限",
       filterCompanies: f.companies || "",
       filterExclude: f.exclude || "",
+      filterExcludeTitle: f.excludeTitle || "",
+      filterRequiredTags: f.requiredTags || "",
+      filterSkipNegotiable: f.skipNegotiable ? "跳过面议" : "",
       company: job?.company || "",
       title: job?.title || "",
       city: job?.city || "",
@@ -770,12 +784,14 @@
       await sleep(400);
     }
     if (!button) {
+      const pageText = document.body?.innerText || "";
+      const blocked = /验证码|安全验证|频繁|操作过快|人机验证|滑块/.test(pageText);
       await addRecord(job, "投递失败");
       session.skipped += 1;
       session.index += 1;
       session.phase = "confirm";
       await saveSession(session);
-      setStatus("没找到投递按钮，返回列表。");
+      setStatus(blocked ? "可能触发风控或验证码，请手动处理后重试。" : "没找到投递按钮，返回列表。");
       await sleep(800);
       if (session.listUrl) location.assign(session.listUrl);
       else history.back();
@@ -860,6 +876,10 @@
         }
         if (session?.running) {
           sendResponse({ ok: false, message: "已有任务进行中，请先点「停止」。" });
+          return false;
+        }
+        if (/login|passport|\/web\/user/i.test(location.href)) {
+          sendResponse({ ok: false, message: "当前是登录页，请先登录后再开始。" });
           return false;
         }
         ensurePanel();

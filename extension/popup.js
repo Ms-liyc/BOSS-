@@ -10,10 +10,13 @@ const DEFAULTS = {
   education: "本科",
   companies: "",
   exclude: "",
+  excludeTitle: "",
+  requiredTags: "",
   maxApply: 20,
   maxPages: 5,
   applyDelay: 3,
   skipCompanyHistory: false,
+  skipNegotiable: false,
 };
 
 const form = document.getElementById("form");
@@ -42,10 +45,13 @@ function readFilters() {
     education: data.get("education") || "",
     companies: String(data.get("companies") || "").trim(),
     exclude: String(data.get("exclude") || "").trim(),
+    excludeTitle: String(data.get("excludeTitle") || "").trim(),
+    requiredTags: String(data.get("requiredTags") || "").trim(),
     maxApply: Math.max(1, Number(data.get("maxApply")) || 20),
     maxPages: Math.max(1, Number(data.get("maxPages")) || 5),
     applyDelay: Math.max(0, Number(data.get("applyDelay")) || 0),
     skipCompanyHistory: Boolean(form.elements.skipCompanyHistory?.checked),
+    skipNegotiable: Boolean(form.elements.skipNegotiable?.checked),
   };
 }
 
@@ -191,11 +197,18 @@ async function refreshPresetSelect() {
   if (current && presets[current]) select.value = current;
 }
 
+function ensureLoggedIn(tabUrl, filters) {
+  if (ZpingCities.isLoginPage(tabUrl, filters.platform)) {
+    throw new Error("当前是登录页，请先登录招聘网站后再开始。");
+  }
+}
+
 async function startHere() {
   const filters = readFilters();
   await chrome.storage.local.set({ filters });
   const tab = await activeTab(filters);
   ensurePlatformMatch(tab.url, filters);
+  ensureLoggedIn(tab.url, filters);
   if (!onListPage(tab.url, filters.platform)) {
     setMessage("请先打开对应网站的职位列表，或使用「打开搜索页并开始」。", true);
     return;
@@ -213,6 +226,7 @@ async function startSearch() {
   await chrome.storage.local.set({ filters, autostart: { enabled: true, filters } });
   const tab = await activeTab(filters);
   ensurePlatformMatch(tab.url, filters);
+  ensureLoggedIn(tab.url, filters);
   await chrome.tabs.update(tab.id, { url: searchUrl(filters) });
   setMessage("正在打开搜索页，列表出来后会自动开始。");
 }
@@ -260,6 +274,23 @@ async function clearLedger() {
   await refreshDashboard();
 }
 
+async function backupExport() {
+  const stats = await ZpingBackup.exportBackup();
+  setMessage(`已备份：去重 ${stats.jobs} 条，Boss Excel ${stats.boss} 条，鱼泡 Excel ${stats.yupao} 条。`);
+}
+
+async function backupImport(file) {
+  const merge = confirm("点「确定」= 合并导入（保留现有数据）；点「取消」= 完全替换为备份内容。");
+  const mode = merge ? "merge" : "replace";
+  if (!merge && !confirm("完全替换会覆盖当前去重记录、筛选方案和 Excel 累计，确定继续？")) return;
+  const stats = await ZpingBackup.importBackup(file, mode);
+  await refreshPresetSelect();
+  const saved = await chrome.storage.local.get("filters");
+  if (saved.filters) writeFilters({ ...DEFAULTS, ...saved.filters });
+  await refreshDashboard();
+  setMessage(`已恢复：去重 ${stats.jobs} 条，Boss Excel ${stats.boss} 条，鱼泡 Excel ${stats.yupao} 条。`);
+}
+
 fillCities();
 refreshPresetSelect();
 
@@ -294,6 +325,18 @@ document.getElementById("clear-history").addEventListener("click", () => {
 });
 document.getElementById("clear-ledger").addEventListener("click", () => {
   clearLedger().catch((error) => setMessage(error.message, true));
+});
+document.getElementById("backup-export").addEventListener("click", () => {
+  backupExport().catch((error) => setMessage(error.message, true));
+});
+document.getElementById("backup-import").addEventListener("click", () => {
+  document.getElementById("backup-file").click();
+});
+document.getElementById("backup-file").addEventListener("change", (event) => {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  backupImport(file).catch((error) => setMessage(error.message, true));
 });
 
 document.getElementById("preset-select").addEventListener("change", async () => {

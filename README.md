@@ -4,7 +4,7 @@
 
 <p align="center">在 Microsoft Edge 中按条件筛选职位，每次投递前人工确认公司、岗位、地点、薪资与学历，避免误投。</p>
 
-<p align="center">✨ <strong>当前版本 1.2.2</strong></p>
+<p align="center">✨ <strong>当前版本 1.3.0</strong></p>
 
 <p align="center">Edge 扩展 · Boss直聘 + 鱼泡网 · 投递前确认 · Excel 导出</p>
 
@@ -21,12 +21,13 @@
 🧠 <strong>投递去重记忆</strong> — 记住已投 / 已跳过 / 已沟通过的职位与公司，下次自动跳过<br>
 📄 <strong>完整 JD 抓取</strong> — 导出 JD详情 列为详情页职位描述全文<br>
 💾 <strong>筛选方案保存</strong> — 多套条件一键切换（如「成都 Python」「北京 Java」）<br>
-⏱️ <strong>投递间隔</strong> — 每次投递后等待 N 秒，降低风控风险
+⏱️ <strong>投递间隔</strong> — 每次投递后等待 N 秒，降低风控风险<br>
+💾 <strong>数据备份</strong> — 一键导出 / 恢复去重记录与 Excel 累计，重装扩展也不丢数据
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Edge-Extension-0078D7?style=flat-square" alt="Edge Extension" />
-  <img src="https://img.shields.io/badge/version-1.2.2-brightgreen?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-1.3.0-brightgreen?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platform-Boss%20%2B%20%E9%B1%BC%E6%B3%A1-orange?style=flat-square" alt="platform" />
   <img src="https://img.shields.io/badge/export-.xlsx-217346?style=flat-square" alt="export" />
   <img src="https://img.shields.io/github/stars/Ms-liyc/BOSS-?style=flat-square" alt="stars" />
@@ -53,6 +54,21 @@ cd BOSS-
 4. 选择仓库中的 `extension` 文件夹
 5. 若招聘网站页面在安装扩展前已打开，请先 **刷新页面**
 
+> 同样适用于 **Chrome** 浏览器（`chrome://extensions` 加载 `extension` 目录）。
+
+### 开发者构建（可选）
+
+```bash
+cd extension
+npm install
+```
+
+`lib/xlsx.bundle.js` 已预置在仓库中，一般无需重新构建。若需自行打包 Excel 库，可在 `extension` 目录执行：
+
+```bash
+npx esbuild node_modules/xlsx-js-style/dist/xlsx.min.js --bundle --format=iife --global-name=XLSX --outfile=lib/xlsx.bundle.js
+```
+
 ---
 
 ## 🚀 使用步骤
@@ -68,6 +84,16 @@ cd BOSS-
    - **跳过** → 查看下一条
    - **停止** → 结束本轮
 6. 投递成功后可点 **下一条** 继续，或 **留在这里** 结束
+
+### 快捷键
+
+确认面板支持键盘操作（输入框聚焦时无效）：
+
+| 键 | 操作 |
+|----|------|
+| Y | 确认投递 |
+| N | 跳过 |
+| S | 停止 |
 
 ### 平台说明
 
@@ -98,9 +124,25 @@ cd BOSS-
 |--------|------|
 | 公司名称 | 多个关键词用逗号分隔，公司名包含任意一个即通过；留空不限 |
 | 排除公司 | 公司名包含任意一个关键词则跳过 |
+| 排除岗位 | 岗位名包含任意一个关键词则跳过（如 销售、实习） |
+| 必须包含标签 | 职位标签需包含任意一个关键词（如 远程、双休）；留空不限 |
+| 跳过面议 | 开启后，薪资为「面议」的职位会被过滤 |
 | 学历 | 职位要求不高于所选学历；职位写「不限」则保留 |
-| 薪资 | 识别 `15-25K`、`8000-16000元/月`、`1.5-2万元/月`、`100-200元/天`；「面议」不拦截 |
+| 薪资 | 识别 `15-25K`、`8000-16000元/月`、`1.5-2万元/月`、`100-200元/天`；未开启「跳过面议」时，面议不过滤 |
 | 城市 | 职位地点需包含所选城市 |
+
+---
+
+## 💾 数据备份
+
+弹窗底部提供 **备份数据** / **恢复数据**：
+
+| 操作 | 说明 |
+|------|------|
+| 备份数据 | 导出 JSON，包含去重记录、筛选方案、两平台 Excel 累计 |
+| 恢复数据 | 选择备份文件；**确定** = 合并导入，**取消** = 完全替换 |
+
+重装扩展、换电脑或清理浏览器数据前，建议先备份。
 
 ---
 
@@ -132,6 +174,19 @@ cd BOSS-
 同一职位链接再次出现时，会用最新记录覆盖旧行，避免重复堆积。
 
 ---
+
+## 🆕 v1.3.0 体验增强
+
+| 改进 | 说明 |
+|------|------|
+| 扩展图标 | 工具栏与扩展管理页显示品牌图标 |
+| 排除岗位 / 标签筛选 | 更精细地过滤不想要的职位 |
+| 跳过面议 | 可选过滤薪资未标明的职位 |
+| 数据备份恢复 | JSON 导出 / 导入，支持合并或替换 |
+| 登录检测 | 开始前识别登录页，避免无效运行 |
+| 风控提示 | 验证码或频繁操作时给出明确提示 |
+
+完整历史见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 🆕 v1.2.2 安全与稳定性
 
@@ -174,8 +229,11 @@ cd BOSS-
 ```
 BOSS-/
 ├── README.md
-└── extension/              # Edge 扩展（加载此目录）
+├── CHANGELOG.md
+├── LICENSE
+└── extension/              # Edge / Chrome 扩展（加载此目录）
     ├── manifest.json
+    ├── icons/              # 扩展图标 16 / 48 / 128
     ├── popup.html / .js / .css
     ├── content/
     │   ├── common.js       # 筛选、确认面板、投递流程、导出
@@ -185,6 +243,8 @@ BOSS-/
     └── lib/
         ├── cities.js       # 城市编码（含鱼泡 URL）
         ├── history.js      # 投递去重记忆
+        ├── backup.js       # 数据备份 / 恢复
+        ├── storage-queue.js
         ├── zping-export.js # Excel 导出逻辑
         └── xlsx.bundle.js  # Excel 样式库
 ```
@@ -201,6 +261,12 @@ BOSS-/
 
 **公司名显示「未识别」？**  
 鱼泡部分卡片格式特殊，可在确认面板核对后再决定是否投递。
+
+**重装扩展后记录没了？**  
+使用弹窗里的「备份数据」提前导出 JSON，装好后用「恢复数据」导入。
+
+**提示验证码或操作过快？**  
+暂停一段时间，在网页手动完成验证后再继续；可适当增大投递间隔。
 
 ---
 

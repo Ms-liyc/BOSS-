@@ -126,7 +126,10 @@
     if (row.filterEducation && row.filterEducation !== "不限") parts.push(row.filterEducation);
     if (row.filterSalary && row.filterSalary !== "不限") parts.push(row.filterSalary);
     if (row.filterCompanies) parts.push(`公司:${row.filterCompanies}`);
-    if (row.filterExclude) parts.push(`排除:${row.filterExclude}`);
+    if (row.filterExclude) parts.push(`排除公司:${row.filterExclude}`);
+    if (row.filterExcludeTitle) parts.push(`排除岗位:${row.filterExcludeTitle}`);
+    if (row.filterRequiredTags) parts.push(`标签:${row.filterRequiredTags}`);
+    if (row.filterSkipNegotiable) parts.push(row.filterSkipNegotiable);
     return parts.join(" · ") || "不限";
   }
 
