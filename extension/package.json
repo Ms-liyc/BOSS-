@@ -7,8 +7,8 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Ms-liyc",
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "xlsx": "^0.18.5",

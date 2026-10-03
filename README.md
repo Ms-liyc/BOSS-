@@ -204,8 +204,28 @@ BOSS-/
 
 ---
 
+## 📜 开源协议
+
+本项目采用 [MIT License](LICENSE)。
+
+**你可以：**
+
+- 自由使用、复制、修改本项目（二次开发）
+- 将修改后的版本分发或用于商业售卖
+
+**你必须：**
+
+- 在分发、售卖或提供服务的任何副本中，**保留本项目的版权声明与 MIT 协议全文**
+- **注明原作者信息**，至少包含：
+  - 原作者：小李（[Ms-liyc](https://github.com/Ms-liyc)）
+  - 原项目地址：https://github.com/Ms-liyc/BOSS-
+
+不得以原作者名义背书你的衍生版本；软件按「原样」提供，不提供任何担保。
+
+---
+
 <p align="center">
   <a href="https://github.com/Ms-liyc/BOSS-">GitHub 仓库</a>
 </p>
 
-<p align="center">MIT License</p>
+<p align="center"><a href="LICENSE">MIT License</a></p>
