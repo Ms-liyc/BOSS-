@@ -4,7 +4,7 @@
 
 <p align="center">在 Microsoft Edge 中按条件筛选职位，每次投递前人工确认公司、岗位、地点、薪资与学历，避免误投。</p>
 
-<p align="center">✨ <strong>当前版本 1.3.1</strong></p>
+<p align="center">✨ <strong>当前版本 1.4.0</strong></p>
 
 <p align="center">Edge 扩展 · Boss直聘 + 鱼泡网 · 投递前确认 · Excel 导出</p>
 
@@ -14,7 +14,8 @@
 🎯 <strong>双平台支持</strong> — Boss直聘、鱼泡网同一套筛选与确认流程<br>
 🔍 <strong>多条件筛选</strong> — 岗位、城市、薪资、学历、公司白名单 / 黑名单<br>
 ✅ <strong>投递前确认</strong> — 页面右下角展示 5 项关键信息，确认后才点击投递<br>
-🤖 <strong>半自动流程</strong> — 自动翻页、自动点「立即沟通 / 免费聊」，每一步由你决定<br>
+🤖 <strong>自动投递</strong> — 可按筛选批量投递，也可逐条确认；支持翻页、间隔与运行日志<br>
+💬 <strong>自定义招呼语</strong> — Boss 通过 API 发送你编辑的打招呼话术<br>
 📊 <strong>Excel 导出</strong> — 导出 .xlsx 投递记录，投递状态与公司重复标记带颜色<br>
 🗺️ <strong>城市直达</strong> — 鱼泡网按所选城市打开对应列表（如成都 a322）<br>
 🔐 <strong>沿用登录态</strong> — 使用你已登录的 Edge 账号，无需额外配置<br>
@@ -27,7 +28,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Edge-Extension-0078D7?style=flat-square" alt="Edge Extension" />
-  <img src="https://img.shields.io/badge/version-1.3.1-brightgreen?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-1.4.0-brightgreen?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platform-Boss%20%2B%20%E9%B1%BC%E6%B3%A1-orange?style=flat-square" alt="platform" />
   <img src="https://img.shields.io/badge/export-.xlsx-217346?style=flat-square" alt="export" />
   <img src="https://img.shields.io/github/stars/Ms-liyc/BOSS-?style=flat-square" alt="stars" />
@@ -174,6 +175,15 @@ npx esbuild node_modules/xlsx-js-style/dist/xlsx.min.js --bundle --format=iife -
 同一职位链接再次出现时，会用最新记录覆盖旧行，避免重复堆积。
 
 ---
+
+## 🆕 v1.4.0 自动投递与招呼语
+
+| 功能 | 说明 |
+|------|------|
+| 自动投递 | 按筛选批量投递，失败自动跳过，右下角显示运行日志 |
+| 自定义招呼语 | Boss 先保存话术再发起沟通，避免只发出网站默认招呼语 |
+| 投递间隔 | 每条之间统一等待并带随机波动，降低风控风险 |
+| 薪资加密修复 | 修复 Boss 薪资乱码导致 Excel `????` 与卡片匹配失败 |
 
 ## 🆕 v1.3.1 修复
 
