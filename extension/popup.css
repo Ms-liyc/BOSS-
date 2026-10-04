@@ -69,13 +69,21 @@ input, select, button {
   font: inherit;
 }
 
-input, select {
+input, select, textarea {
   width: 100%;
   padding: 6px 8px;
   border: 1px solid #cbd2d9;
   border-radius: 6px;
   background: #fff;
   color: #1f2933;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 72px;
+  max-height: 160px;
+  line-height: 1.45;
+  font-family: inherit;
 }
 
 .pair {
@@ -94,6 +102,11 @@ button {
 
 button.primary {
   background: #0f766e;
+  color: #fff;
+}
+
+button.auto {
+  background: #1d4ed8;
   color: #fff;
 }
 

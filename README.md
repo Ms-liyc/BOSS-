@@ -4,7 +4,7 @@
 
 <p align="center">在 Microsoft Edge 中按条件筛选职位，每次投递前人工确认公司、岗位、地点、薪资与学历，避免误投。</p>
 
-<p align="center">✨ <strong>当前版本 1.3.0</strong></p>
+<p align="center">✨ <strong>当前版本 1.3.1</strong></p>
 
 <p align="center">Edge 扩展 · Boss直聘 + 鱼泡网 · 投递前确认 · Excel 导出</p>
 
@@ -27,7 +27,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Edge-Extension-0078D7?style=flat-square" alt="Edge Extension" />
-  <img src="https://img.shields.io/badge/version-1.3.0-brightgreen?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-1.3.1-brightgreen?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/platform-Boss%20%2B%20%E9%B1%BC%E6%B3%A1-orange?style=flat-square" alt="platform" />
   <img src="https://img.shields.io/badge/export-.xlsx-217346?style=flat-square" alt="export" />
   <img src="https://img.shields.io/github/stars/Ms-liyc/BOSS-?style=flat-square" alt="stars" />
@@ -174,6 +174,13 @@ npx esbuild node_modules/xlsx-js-style/dist/xlsx.min.js --bundle --format=iife -
 同一职位链接再次出现时，会用最新记录覆盖旧行，避免重复堆积。
 
 ---
+
+## 🆕 v1.3.1 修复
+
+| 修复 | 说明 |
+|------|------|
+| Boss 岗位识别 | 修复误用鱼泡城市校验导致 Boss 无法开始、面板空白 |
+| Boss 新版页面 | 适配新版职位卡片 DOM 与 API 字段 |
 
 ## 🆕 v1.3.0 体验增强
 

@@ -59,8 +59,8 @@
     </label>
 
     <label>
-      公司名称（多个用逗号分隔，空为不限）
-      <input name="companies" type="text" placeholder="字节跳动,腾讯" />
+      仅投递这些公司（白名单，留空=不限）
+      <input name="companies" type="text" placeholder="留空不限；填了则只投匹配的公司" />
     </label>
 
     <label>
@@ -90,8 +90,13 @@
     </div>
 
     <label>
-      投递间隔（秒，0 为不等待）
-      <input name="applyDelay" type="number" min="0" step="1" />
+      投递间隔（秒，自动投递每条之间等待，建议 3~8）
+      <input name="applyDelay" type="number" min="0" step="1" value="5" />
+    </label>
+
+    <label>
+      打招呼语（Boss 会先保存此话术再发起沟通；留空则用网站默认；修改后无需重新开始）
+      <textarea name="greeting" rows="4" placeholder="您好，我对贵司的XX岗位很感兴趣，我有相关项目经验，期待进一步沟通。"></textarea>
     </label>
 
     <label class="checkbox">
@@ -117,8 +122,10 @@
       </label>
     </div>
 
-    <button type="button" id="start-here" class="primary">在当前页开始</button>
+    <button type="button" id="start-here" class="primary">在当前页开始（逐条确认）</button>
+    <button type="button" id="auto-here" class="auto">自动投递筛选结果</button>
     <button type="button" id="start-search">打开搜索页并开始</button>
+    <button type="button" id="auto-search" class="ghost">打开搜索页并自动投递</button>
     <button type="button" id="stop" class="ghost">停止</button>
     <button type="button" id="export" class="ghost">导出 Excel</button>
 

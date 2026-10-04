@@ -10,8 +10,8 @@
 
   function normalizeItem(item) {
     if (!item || typeof item !== "object") return null;
-    const title = item.jobName || item.title || item.name;
-    const salary = item.salaryDesc || item.salary || item.salaryMonth;
+    const title = item.jobName || item.title || item.name || item.positionName || item.postName;
+    const salary = item.salaryDesc || item.salary || item.salaryMonth || item.salaryName;
     if (!title && !salary) return null;
     return item;
   }

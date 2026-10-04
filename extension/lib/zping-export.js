@@ -66,6 +66,19 @@
     return Array.from(map.values());
   }
 
+  function isEncryptedBossSalary(text) {
+    const value = String(text ?? "");
+    if (/[\uE000-\uF8FF]/.test(value)) return true;
+    if (/[kK千]|万|元/.test(value) && !/\d/.test(value)) return true;
+    return false;
+  }
+
+  function sanitizeSalary(value) {
+    const text = String(value ?? "").trim();
+    if (!text || isEncryptedBossSalary(text)) return "面议";
+    return text;
+  }
+
   function sanitizeExcelValue(value) {
     const text = String(value ?? "");
     return /^[=+\-@]/.test(text) ? `'${text}` : text;
@@ -145,7 +158,7 @@
       row.title || "",
       row.city || "",
       row.education || "不限",
-      row.salary || "",
+      sanitizeSalary(row.salary),
       row.tags || "",
       buildAppliedCell(row.result),
       row.time || "",

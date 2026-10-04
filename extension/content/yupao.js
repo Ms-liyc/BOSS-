@@ -336,10 +336,19 @@
     if (!button) return "missing";
     button.scrollIntoView({ block: "center", behavior: "smooth" });
     button.click();
-    await sleep(500);
-    clickSendIfAny();
+    await sleep(700);
+    const greeting = await globalThis.ZpingRuntime?.resolveGreeting?.()
+      || globalThis.ZpingRuntime?.getGreeting?.()
+      || "";
+    if (greeting) {
+      const greet = await globalThis.ZpingGreeting?.fillAndSend?.(greeting);
+      if (!greet?.sent) clickSendIfAny();
+      await sleep(500);
+    } else {
+      clickSendIfAny();
+    }
     const started = Date.now();
-    while (Date.now() - started < 6000) {
+    while (Date.now() - started < 9000) {
       clickSendIfAny();
       if (threadVisible()) return "opened-chat";
       await sleep(400);

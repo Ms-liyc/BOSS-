@@ -14,7 +14,8 @@ const DEFAULTS = {
   requiredTags: "",
   maxApply: 20,
   maxPages: 5,
-  applyDelay: 3,
+  applyDelay: 5,
+  greeting: "",
   skipCompanyHistory: false,
   skipNegotiable: false,
 };
@@ -49,7 +50,10 @@ function readFilters() {
     requiredTags: String(data.get("requiredTags") || "").trim(),
     maxApply: Math.max(1, Number(data.get("maxApply")) || 20),
     maxPages: Math.max(1, Number(data.get("maxPages")) || 5),
-    applyDelay: Math.max(0, Number(data.get("applyDelay")) || 0),
+    applyDelay: Math.max(0, Number.isFinite(Number(data.get("applyDelay"))) && data.get("applyDelay") !== ""
+      ? Number(data.get("applyDelay"))
+      : DEFAULTS.applyDelay),
+    greeting: String(data.get("greeting") || "").trim(),
     skipCompanyHistory: Boolean(form.elements.skipCompanyHistory?.checked),
     skipNegotiable: Boolean(form.elements.skipNegotiable?.checked),
   };
@@ -100,7 +104,7 @@ function ensurePlatformMatch(tabUrl, filters) {
 }
 
 function scriptFiles(platform) {
-  const shared = ["lib/cities.js", "lib/storage-queue.js", "lib/history.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js"];
+  const shared = ["lib/cities.js", "lib/storage-queue.js", "lib/history.js", "lib/greeting.js", "lib/xlsx.bundle.js", "lib/zping-export.js", "content/common.js"];
   return platform === "yupao"
     ? [...shared, "content/yupao.js"]
     : [...shared, "content/boss.js"];
@@ -114,11 +118,11 @@ async function injectBoss(tabId) {
   });
 }
 
-async function sendToTab(tab, filters, type) {
+async function sendToTab(tab, filters, type, extra = {}) {
   if (!ZpingCities.isAllowedHost(tab.url, filters.platform)) {
     throw new Error("只能在 Boss 或鱼泡官网页面使用本扩展");
   }
-  const payload = { type, filters };
+  const payload = { type, filters, ...extra };
   try {
     return await chrome.tabs.sendMessage(tab.id, payload);
   } catch (error) {
@@ -205,6 +209,9 @@ function ensureLoggedIn(tabUrl, filters) {
 
 async function startHere() {
   const filters = readFilters();
+  if (!filters.greeting) {
+    setMessage("提示：未填写打招呼语，投递时将使用网站默认话术。", false);
+  }
   await chrome.storage.local.set({ filters });
   const tab = await activeTab(filters);
   ensurePlatformMatch(tab.url, filters);
@@ -221,6 +228,25 @@ async function startHere() {
   }
 }
 
+async function startAutoHere() {
+  if (!confirm("将按当前筛选自动投递，无需逐条确认。可随时在页面右下角点「停止」中断。确定继续？")) return;
+  const filters = readFilters();
+  await chrome.storage.local.set({ filters });
+  const tab = await activeTab(filters);
+  ensurePlatformMatch(tab.url, filters);
+  ensureLoggedIn(tab.url, filters);
+  if (!onListPage(tab.url, filters.platform)) {
+    setMessage("请先打开对应网站的职位列表，或使用「打开搜索页并自动投递」。", true);
+    return;
+  }
+  const result = await sendToTab(tab, filters, "ZPING_START", { autoApply: true });
+  setMessage(result?.message || "已开始自动投递，请看页面右下角进度。");
+  if (result?.ok) {
+    await refreshDashboard();
+    window.close();
+  }
+}
+
 async function startSearch() {
   const filters = readFilters();
   await chrome.storage.local.set({ filters, autostart: { enabled: true, filters } });
@@ -229,6 +255,20 @@ async function startSearch() {
   ensureLoggedIn(tab.url, filters);
   await chrome.tabs.update(tab.id, { url: searchUrl(filters) });
   setMessage("正在打开搜索页，列表出来后会自动开始。");
+}
+
+async function startAutoSearch() {
+  if (!confirm("将打开搜索页并按筛选自动投递，无需逐条确认。确定继续？")) return;
+  const filters = readFilters();
+  await chrome.storage.local.set({
+    filters,
+    autostart: { enabled: true, filters, autoApply: true },
+  });
+  const tab = await activeTab(filters);
+  ensurePlatformMatch(tab.url, filters);
+  ensureLoggedIn(tab.url, filters);
+  await chrome.tabs.update(tab.id, { url: searchUrl(filters) });
+  setMessage("正在打开搜索页，列表加载后将自动投递。");
 }
 
 async function stop() {
@@ -311,8 +351,14 @@ form.addEventListener("input", scheduleSaveFilters);
 document.getElementById("start-here").addEventListener("click", () => {
   startHere().catch((error) => setMessage(error.message, true));
 });
+document.getElementById("auto-here").addEventListener("click", () => {
+  startAutoHere().catch((error) => setMessage(error.message, true));
+});
 document.getElementById("start-search").addEventListener("click", () => {
   startSearch().catch((error) => setMessage(error.message, true));
+});
+document.getElementById("auto-search").addEventListener("click", () => {
+  startAutoSearch().catch((error) => setMessage(error.message, true));
 });
 document.getElementById("stop").addEventListener("click", () => {
   stop().catch((error) => setMessage(error.message, true));
